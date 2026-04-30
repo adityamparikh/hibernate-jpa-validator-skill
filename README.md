@@ -19,7 +19,10 @@ This skill brings Hypersistence Optimizer's philosophy to AI-assisted code revie
 | **Second-Level Caching** | Entity/collection/query cache, concurrency strategies, Ehcache/Caffeine/Redis config, @NaturalIdCache, query cache invalidation gotchas |
 | **Connection Pooling** | HikariCP tuning, pool sizing formula, leak detection, statement caching, metrics |
 | **Inheritance Strategies** | SINGLE_TABLE (usually best), JOINED, TABLE_PER_CLASS (avoid), @MappedSuperclass, composition over inheritance |
-| **Spring Data JPA** | Derived queries, @Query, @Modifying pitfalls, custom fragments, Specification API, projections, auditing, anti-patterns |
+| **Spring Data JPA** | `BaseJpaRepository`, `findAll`/`findById` anti-patterns, `persist` vs `save`, EXISTS optimization, Stream methods, QBE, Jakarta Data, derived queries, `@Query`, `@Modifying` pitfalls, custom fragments, Specification API, projections, auditing, bidirectional sync, OSIV |
+| **Spring Transactions** | `@Transactional` boundaries, propagation, isolation, optimistic/pessimistic locking, `LazyConnectionDataSourceProxy`, read-write routing, `@TransactionalEventListener`, OSIV |
+| **Testing** | Testcontainers + `@ServiceConnection`, `@DataJpaTest` correctness, query count assertions, cleanup strategies, `@Sql`, migration tests |
+| **Schema Migrations** | Flyway, `ddl-auto=validate`, repeatable migrations, zero-downtime column changes, `CREATE INDEX CONCURRENTLY`, multi-tenant schemas |
 | **Hibernate 6 Features** | @DynamicUpdate/Insert, @Immutable, @Subselect, @Filter, @SQLRestriction, @SoftDelete, @TenantId, Statistics, custom types |
 | **Migration 5→6** | javax→jakarta, naming changes, type system, HQL parser, Criteria API, Spring Boot 3 alignment |
 
@@ -88,7 +91,7 @@ The skill follows the **Hypersistence Optimizer philosophy**: run the full check
 
 The main entry point. Routes requests to the right section:
 - **Section B** — Entity Mapping Validation (always runs the full checklist)
-- **Sections C–H** — Specific areas: N+1, queries, batching, caching, pooling, Spring Data
+- **Sections C–K** — Specific areas: N+1, queries, batching, caching, pooling, Spring Data, transactions, testing, schema migrations
 
 ### Reference Files
 
@@ -100,12 +103,16 @@ references/
 ├── identifier-strategies.md       # SEQUENCE, UUID, composite keys
 ├── association-mappings.md        # All 4 relationship types
 ├── fetching-and-n-plus-one.md     # N+1 detection and fixes
-├── query-optimization.md          # Projections, pagination, native SQL
+├── query-optimization.md          # Projections, keyset pagination, JOIN FETCH + pagination
 ├── batch-processing.md            # JDBC batching, flush/clear, bulk DML
 ├── caching.md                     # L2 cache strategies and gotchas
 ├── connection-pooling.md          # HikariCP tuning
 ├── inheritance-strategies.md      # SINGLE_TABLE, JOINED, etc.
-├── spring-data-jpa.md             # Repository patterns and anti-patterns
+├── spring-data-jpa.md             # BaseJpaRepository, anti-patterns, projections, QBE
+├── spring-transactions.md         # @Transactional, locking, routing, OSIV
+├── spring-testing.md              # Testcontainers, @DataJpaTest, query count assertions
+├── spring-schema-migrations.md    # Flyway, ddl-auto=validate, zero-downtime patterns
+├── logging-and-monitoring.md      # datasource-proxy, p6spy, Hibernate Statistics
 ├── hibernate-features.md          # Hibernate 6 specific features
 └── migration-5-to-6.md            # Upgrade guide
 ```

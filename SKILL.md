@@ -1,6 +1,6 @@
 ---
 name: hibernate-jpa-validator
-description: Use when reviewing or writing Hibernate/JPA code involving @Entity, @ManyToOne, @OneToMany, @ManyToMany, @OneToOne, GenerationType, EntityManager, Session, SessionFactory, CriteriaBuilder, Spring Data JPA repositories, HikariCP, @BatchSize, @EntityGraph, JPQL, identifier generation strategies, association mappings, fetch plans, N+1 detection, batch processing, second-level caching, connection pooling, DTO projections, query optimization, inheritance strategies, Hibernate 6 features, or migration from Hibernate 5 to 6.
+description: Use when reviewing or writing Hibernate/JPA code involving @Entity, @ManyToOne, @OneToMany, @ManyToMany, @OneToOne, GenerationType, EntityManager, Session, SessionFactory, CriteriaBuilder, Spring Data JPA repositories, JpaRepository, BaseJpaRepository, HikariCP, @BatchSize, @EntityGraph, JPQL, @Transactional, @Lock, OptimisticLockException, LazyConnectionDataSourceProxy, read-write routing, OSIV, Testcontainers, @DataJpaTest, datasource-proxy, query count assertions, Flyway, schema migrations, ddl-auto, identifier generation strategies, association mappings, fetch plans, N+1 detection, batch processing, second-level caching, connection pooling, DTO projections, keyset pagination, JOIN FETCH with pagination, query optimization, inheritance strategies, Hibernate 6 features, or migration from Hibernate 5 to 6.
 ---
 
 # Hibernate/JPA Validator
@@ -24,7 +24,10 @@ What does the user need?
 ├── Caching questions → Section F
 ├── Connection pool tuning → Section G
 ├── Spring Data JPA patterns → Section H
-└── All of the above for a PR/module → Run B→H in order
+├── Transactions / locking / propagation → Section I
+├── Testcontainers / repository tests → Section J
+├── Flyway / DDL validation / migrations → Section K
+└── All of the above for a PR/module → Run B→K in order
 ```
 
 ---
@@ -335,10 +338,16 @@ spring:
 
 **Top anti-patterns to flag:**
 
-1. `findAll()` + Java stream filter — always `findByXxx` or `@Query` instead
-2. `@Modifying` without `clearAutomatically = true` — stale first-level cache
-3. Derived query methods that generate N+1 — check `?1` bindings turn into joins
-4. `save(entity)` on managed entity inside `@Transactional` — redundant, dirty checking handles it
+1. `findAll()` — loads entire table; always `findByXxx`, `Pageable`, or projection
+2. `findById()` on write paths — use `getReferenceById()` when you only need an FK
+3. `save()` on a new entity with **assigned** ID — triggers MERGE (extra SELECT, returns a different managed instance). Even with `@GeneratedValue` (where `save()` correctly delegates to `persist()`), prefer `persist()` from `BaseJpaRepository` to make intent explicit and survive a future switch to assigned IDs.
+4. `@Modifying` without `clearAutomatically = true` — stale first-level cache
+5. Derived query methods that generate N+1 — add `@EntityGraph` or JOIN FETCH
+6. `save(entity)` on managed entity inside `@Transactional` — redundant, dirty checking handles it
+7. `countByXxx > 0` for existence checks — use the `existsByXxx` derived method (Spring Data 3.x emits `SELECT 1 ... LIMIT 1`); reach for native `SELECT EXISTS(...)` only when composing with a larger query
+8. `JOIN FETCH` + `Pageable` — silently triggers in-memory pagination (HHH90003004)
+9. Returning entities from REST controllers — silent N+1 with OSIV; use DTOs
+10. `spring.jpa.open-in-view=true` (the default) — masks N+1, holds connections
 
 ```java
 // ❌ WRONG — stale cache after bulk update
@@ -352,7 +361,79 @@ int updateStatus(@Param("status") String status, @Param("authorId") Long authorI
 int updateStatus(@Param("status") String status, @Param("authorId") Long authorId);
 ```
 
-→ See `references/spring-data-jpa.md` for Specification API, projections, auditing, custom fragments.
+**Repository base class:** Prefer Hypersistence Utils' `BaseJpaRepository` over `JpaRepository` — it omits `findAll()`/`save()` and exposes explicit `persist()`/`merge()`/`getReferenceById()`.
+
+→ See `references/spring-data-jpa.md` for `BaseJpaRepository`, EXISTS optimization, Stream methods, QBE, Jakarta Data, bidirectional sync helpers, projections, auditing, Specification API.
+
+---
+
+## I: Transactions and Concurrency
+
+**Defaults to enforce:**
+
+```properties
+spring.jpa.open-in-view=false   # turn off OSIV
+```
+
+```java
+@Transactional(readOnly = true)   // every read service method
+@Transactional                    // every write service method (default propagation REQUIRED)
+```
+
+**Quick checklist:**
+- Service layer owns `@Transactional`, not repositories
+- `readOnly = true` on every read path (skips dirty-check snapshot)
+- No self-invocation of `@Transactional` methods (Spring AOP bypassed)
+- `@Version` on every mutable entity (optimistic locking)
+- Pessimistic locks have a timeout
+- External API calls outside the transaction (use `@TransactionalEventListener(AFTER_COMMIT)`)
+- Read-write routing wrapped in `LazyConnectionDataSourceProxy`
+
+→ See `references/spring-transactions.md` for propagation rules, isolation levels, locking, `LazyConnectionDataSourceProxy`, read-write routing, OSIV.
+
+---
+
+## J: Testing the Data Access Layer
+
+**Rules:**
+- Real database via Testcontainers — **never** H2/HSQLDB for production code targeting PostgreSQL/MySQL
+- `@AutoConfigureTestDatabase(replace = Replace.NONE)` on `@DataJpaTest` — Spring otherwise substitutes H2
+- `em.flush() + em.clear()` after seeding — without it, assertions hit L1 cache, not DB
+- Assert query counts with `datasource-proxy` — best N+1 regression guard
+- `ddl-auto=validate` in test profile — catches mapping/migration drift
+
+```java
+@DataJpaTest
+@Testcontainers
+@AutoConfigureTestDatabase(replace = Replace.NONE)
+class PostRepositoryTest {
+    @Container @ServiceConnection
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
+}
+```
+
+→ See `references/spring-testing.md` for `@ServiceConnection`, reusable containers, query count assertions, cleanup strategies, `@Sql`, migration tests.
+
+---
+
+## K: Schema Migrations
+
+**Rules:**
+- `spring.jpa.hibernate.ddl-auto=validate` in every environment except first-time bootstrap
+- **Never** `update` or `create-drop` outside of throwaway dev DBs
+- Flyway (or Liquibase) owns the schema — Hibernate validates only
+- Three-step migrations for adding NOT NULL columns to populated tables
+- `CREATE INDEX CONCURRENTLY` for any production index addition (PostgreSQL)
+- Test data-changing migrations against a copy of production data
+
+```properties
+spring.jpa.hibernate.ddl-auto=validate
+spring.flyway.enabled=true
+spring.flyway.validate-on-migrate=true
+spring.flyway.out-of-order=false
+```
+
+→ See `references/spring-schema-migrations.md` for Flyway config, repeatable migrations, zero-downtime patterns, DDL validation, multi-tenant schemas.
 
 ---
 
