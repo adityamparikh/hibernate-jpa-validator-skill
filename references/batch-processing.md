@@ -28,10 +28,15 @@ spring.jpa.properties.hibernate.jdbc.batch_size=25
 spring.jpa.properties.hibernate.order_inserts=true   # batch same entity type together
 spring.jpa.properties.hibernate.order_updates=true   # same for updates
 
+# Required when using @Version (optimistic locking) with batching:
+spring.jpa.properties.hibernate.jdbc.batch_versioned_data=true
+
 # Verify batching is actually happening (check logs for "executing batch")
 spring.jpa.properties.hibernate.generate_statistics=true
 logging.level.org.hibernate.engine.jdbc.batch.internal.BatchingBatch=DEBUG
 ```
+
+**`hibernate.jdbc.batch_versioned_data=true`:** By default, Hibernate will not batch `UPDATE` statements for versioned entities (those with `@Version`) because it cannot know how many rows were affected per statement in a batch — and it needs that to detect optimistic locking violations. Setting this to `true` tells Hibernate to trust the JDBC driver to report per-statement row counts, enabling batching for versioned entities. Supported by all modern drivers (PostgreSQL, MySQL 5.1.18+, Oracle 12c+).
 
 **Important:** `IDENTITY` generation strategy **completely disables** batching — Hibernate must get the generated ID back before it can move on. This is the primary reason to use `SEQUENCE`.
 
@@ -209,3 +214,40 @@ batch: 25 statements executed
 ```
 
 If you see individual INSERTs (not batch), check: IDENTITY generator, missing batch_size config, or entity hierarchy (TABLE_PER_CLASS disables batching).
+
+---
+
+## Cursor-Based Processing with ScrollableResults
+
+For processing very large result sets without loading everything into memory:
+
+```java
+@Transactional(readOnly = true)
+public void processAllPosts() {
+    Session session = entityManager.unwrap(Session.class);
+
+    // ScrollableResults fetches rows from DB cursor — constant memory regardless of table size
+    try (ScrollableResults<Post> scroll = session.createQuery(
+            "FROM Post p WHERE p.status = 'ACTIVE'", Post.class)
+            .setFetchSize(50)          // fetch 50 rows at a time from DB cursor
+            .scroll(ScrollMode.FORWARD_ONLY)) {
+
+        int count = 0;
+        while (scroll.next()) {
+            Post post = scroll.get();
+            processPost(post);
+
+            if (++count % 50 == 0) {
+                session.flush();
+                session.clear();   // prevent L1 cache growing unbounded
+            }
+        }
+    }
+}
+```
+
+**When to use ScrollableResults vs batch paging:**
+- `ScrollableResults` — continuous streaming with a live DB cursor. Best for ETL pipelines, exports, or when you need to process ALL rows in order.
+- Chunk-by-page — closes and re-opens the query per chunk. Better when rows may change between chunks, or when you need restartable processing.
+
+**`setFetchSize(50)`** is critical — without it, some JDBC drivers (PostgreSQL) load the entire result set into client memory before returning the first row.

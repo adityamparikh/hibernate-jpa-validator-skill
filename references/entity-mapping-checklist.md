@@ -243,7 +243,76 @@ private OffsetDateTime eventAt; // with TZ offset
 
 ---
 
-## 9. Lombok Compatibility
+## 9. Column Type Optimization
+
+Choosing the right SQL type has performance and correctness implications.
+
+### Avoid CLOB/BLOB When VARCHAR/VARBINARY Works
+
+```java
+// ❌ WRONG — CLOB is an out-of-row LOB by default on many DBs
+@Lob
+private String description;
+// On PostgreSQL: Hibernate may use oid type → separate pg_largeobject table
+// On MySQL: TEXT/MEDIUMTEXT stored out-of-row for large values
+
+// ✅ CORRECT — use TEXT or VARCHAR for reasonably sized strings
+@Column(columnDefinition = "TEXT")    // stored inline in PostgreSQL
+private String description;
+
+@Column(length = 4000)               // VARCHAR(4000) — inline, with length enforcement
+private String summary;
+```
+
+**Rule:** Only use `@Lob` / `CLOB` when content genuinely exceeds 4–8 KB. For most descriptions, comments, and body text, `TEXT` or `VARCHAR(n)` is faster (no LOB detouring) and simpler.
+
+### @Nationalized — Unicode Columns (SQL Server / Oracle)
+
+On SQL Server and Oracle, `VARCHAR` is non-Unicode. For international content:
+
+```java
+// ❌ On SQL Server: VARCHAR can't store CJK/Arabic/emoji
+@Column(length = 200)
+private String name;
+
+// ✅ NVARCHAR on SQL Server, NCLOB on Oracle
+@Nationalized
+@Column(length = 200)
+private String name;
+```
+
+On PostgreSQL and MySQL (utf8mb4), `@Nationalized` is a no-op — all VARCHAR columns are Unicode. Only needed for SQL Server and Oracle.
+
+### Numeric Column Types
+
+```java
+// ❌ float/double — floating-point rounding errors
+private double price;
+
+// ✅ BigDecimal for money/accounting
+@Column(precision = 19, scale = 4)  // 19 digits total, 4 decimal places
+private BigDecimal price;
+
+// ✅ Integer types — choose smallest that fits
+private int viewCount;       // INT (up to ~2.1 billion)
+private long totalViews;     // BIGINT (up to ~9.2 * 10^18)
+```
+
+### Binary / UUID Types
+
+```java
+// ✅ Native UUID type (PostgreSQL)
+@Column(columnDefinition = "uuid")
+private UUID externalId;
+
+// ✅ Binary(16) for UUID on MySQL (more efficient than VARCHAR(36))
+@Column(columnDefinition = "BINARY(16)")
+private UUID externalId;
+```
+
+---
+
+## 10. Lombok Compatibility
 
 | Annotation | Safe on Entity? | Notes |
 |---|---|---|

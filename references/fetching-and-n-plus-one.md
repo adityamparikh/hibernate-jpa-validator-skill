@@ -197,6 +197,80 @@ Option C — Use `@BatchSize` on both collections (cleanest for most cases).
 
 ---
 
+## Persistence Context Size Management
+
+The first-level cache (persistence context) holds every entity loaded or persisted in the current Session. It's a `HashMap<EntityKey, Object>`. Unbounded growth causes:
+- **Memory pressure** — hundreds of thousands of objects pinned in heap
+- **Slow flush** — dirty checking compares every managed entity
+- **Stale data** — reading the same entity twice returns the cached version even if DB changed
+
+### Signs of an Oversized Persistence Context
+
+```java
+// ❌ ANTI-PATTERN: loads entire table into persistence context
+public void updateAllPrices() {
+    List<Product> all = productRepository.findAll();  // 500,000 products in L1 cache!
+    all.forEach(p -> p.setPrice(p.getPrice().multiply(BigDecimal.valueOf(1.10))));
+}
+
+// Flush: Hibernate dirty-checks all 500,000 entities × all fields = very slow
+```
+
+### Rule: Keep Transactions Short and Narrow
+
+```java
+// ✅ Short transaction — only what's needed
+@Transactional
+public void adjustPrice(Long productId, BigDecimal multiplier) {
+    Product p = productRepository.findById(productId).orElseThrow();
+    p.setPrice(p.getPrice().multiply(multiplier));
+    // Transaction commits, L1 cache discarded — no accumulation
+}
+```
+
+### Rule: Use JPQL Bulk UPDATE Instead of Load-and-Modify
+
+```java
+// ❌ 500,000 entities in persistence context, 500,000 UPDATEs
+List<Product> products = productRepository.findByCategory("ELECTRONICS");
+products.forEach(p -> p.setPrice(p.getPrice().multiply(BigDecimal.valueOf(1.10))));
+
+// ✅ Zero entities in persistence context, 1 UPDATE
+@Modifying(clearAutomatically = true)
+@Query("UPDATE Product p SET p.price = p.price * :multiplier WHERE p.category = :category")
+int adjustPrices(@Param("multiplier") BigDecimal multiplier, @Param("category") String category);
+```
+
+### Rule: Detach Read-Only Entities After Use
+
+```java
+@Transactional(readOnly = true)
+public List<PostDTO> buildReport() {
+    List<Post> posts = postRepository.findAll();
+
+    List<PostDTO> result = posts.stream()
+        .map(postMapper::toDTO)
+        .toList();
+
+    // Explicitly evict from L1 to free memory — optional in readOnly=true tx
+    // but good practice in long-lived sessions
+    posts.forEach(entityManager::detach);
+
+    return result;
+}
+```
+
+`@Transactional(readOnly = true)` hints to Hibernate to skip the snapshot copy for dirty checking. It does **not** prevent the entities from being held in the L1 cache for the transaction duration — `detach()` or `clear()` does.
+
+### Rule: Never Load More Than ~1000 Entities per Transaction
+
+If you need to process more, use:
+1. Chunk processing with flush/clear (see batch-processing.md)
+2. `ScrollableResults` with flush/clear (see batch-processing.md)
+3. `StatelessSession` for pure bulk operations
+
+---
+
 ## Fetch Decision Tree
 
 ```

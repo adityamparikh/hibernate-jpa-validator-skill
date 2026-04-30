@@ -80,14 +80,32 @@ For PostgreSQL, configure `keepalive-time` to avoid connection drops through loa
 
 ## Statement Caching
 
-HikariCP delegates statement caching to the JDBC driver. For PostgreSQL:
+HikariCP delegates statement caching to the JDBC driver. The driver maintains a per-connection LRU cache of `PreparedStatement` objects — parsing SQL is skipped on cache hits.
+
+### PostgreSQL (server-side prepared statements)
 
 ```properties
+spring.datasource.hikari.data-source-properties.prepStmtCacheSize=250       # how many statements to cache per connection
+spring.datasource.hikari.data-source-properties.prepStmtCacheSqlLimit=2048  # max SQL length eligible for caching
+```
+
+PostgreSQL auto-prepares statements on the server after 5 executions. The driver caches the prepared statement handles client-side.
+
+### MySQL / MariaDB (critical — disabled by default)
+
+```properties
+spring.datasource.hikari.data-source-properties.cachePrepStmts=true         # MUST enable — off by default!
 spring.datasource.hikari.data-source-properties.prepStmtCacheSize=250
 spring.datasource.hikari.data-source-properties.prepStmtCacheSqlLimit=2048
-spring.datasource.hikari.data-source-properties.cachePrepStmts=true
-spring.datasource.hikari.data-source-properties.useServerPrepStmts=true  # MySQL
+spring.datasource.hikari.data-source-properties.useServerPrepStmts=true     # send to MySQL server for parsing
+spring.datasource.hikari.data-source-properties.rewriteBatchedStatements=true  # enables true JDBC batching on MySQL
 ```
+
+`rewriteBatchedStatements=true` is **required** for JDBC batching to work on MySQL — without it, MySQL executes each statement individually even with `executeBatch()` called.
+
+### Impact
+
+A well-tuned statement cache reduces CPU overhead on both client and server, especially for applications issuing thousands of similar parameterized queries per second (e.g., `SELECT * FROM post WHERE id = ?`).
 
 ---
 
@@ -138,6 +156,55 @@ HikariCP exposes metrics via Micrometer (auto-configured in Spring Boot):
 | Nested transactions without propagation | Each nested call opens new connection | Check PROPAGATION_REQUIRED vs REQUIRES_NEW |
 | Thread pool mismatch | Web thread pool >> HikariCP pool | Align sizes or use REQUIRES_NEW carefully |
 | Slow queries | Connections held waiting for DB | Add indexes, optimize queries |
+
+---
+
+## FlexyPool — Adaptive Pool Sizing and Monitoring
+
+HikariCP is excellent but has a fixed maximum pool size. FlexyPool wraps any connection pool and provides:
+- **Adaptive pool sizing** — automatically grows the pool when connections are in high demand, shrinks it when idle
+- **Rich metrics** — acquisition time histograms, overflow counts, timeout rates
+- **Pool exhaustion early warning** — alerts before `connectionTimeout` fires
+
+```xml
+<dependency>
+    <groupId>com.vladmihalcea.flexy-pool</groupId>
+    <artifactId>flexy-hikaricp</artifactId>
+    <version>2.2.3</version>
+</dependency>
+```
+
+```java
+@Bean
+public FlexyPoolDataSource<HikariDataSource> flexyPoolDataSource(
+        HikariDataSource hikariDataSource) {
+
+    FlexyPoolConfiguration<HikariDataSource> config =
+        new FlexyPoolConfiguration.Builder<>(
+            "myApp-pool",
+            hikariDataSource,
+            HikariCPPoolAdapter.FACTORY
+        )
+        .setMetricsFactory(new MicrometerMetricsFactory())  // → Prometheus
+        .setConnectionAcquisitionTimeThreshold(50L)         // warn if > 50ms to get connection
+        .build();
+
+    return new FlexyPoolDataSource<>(config,
+        new IncrementPoolOnTimeoutConnectionAcquisitionStrategy.Factory<>(5),  // grow by 5 on timeout
+        new RetryConnectionAcquisitionStrategy.Factory<>(2)                    // retry 2x before timeout
+    );
+}
+```
+
+**FlexyPool metrics (Micrometer):**
+- `flexypool.connection.acquire` — histogram of time to get a connection
+- `flexypool.connection.lease` — histogram of time connection was held
+- `flexypool.connection.overflow` — connections acquired beyond pool max
+
+**When to add FlexyPool:**
+- Production systems where pool size is hard to right-size in advance
+- High-traffic apps with bursty connection demand
+- When you want connection acquisition time SLAs in Grafana
 
 ---
 
