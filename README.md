@@ -30,21 +30,13 @@ This skill brings Hypersistence Optimizer's philosophy to AI-assisted code revie
 
 ## Installation
 
-### Option A: Install from GitHub
+Clone the skill into your Claude Code skills directory:
 
 ```bash
-# Claude Code skill installation
-claude skill install https://github.com/YOUR_USERNAME/hibernate-jpa-validator-skill
+git clone https://github.com/adityamparikh/hibernate-jpa-validator-skill.git ~/.claude/skills/hibernate-jpa-validator
 ```
 
-### Option B: Manual Install
-
-Clone and copy into your Claude plugins directory:
-
-```bash
-git clone https://github.com/YOUR_USERNAME/hibernate-jpa-validator-skill.git
-cp -r hibernate-jpa-validator-skill ~/.claude/plugins/hibernate-jpa-validator/
-```
+Claude Code will pick up the skill on the next session.
 
 ---
 
