@@ -1,6 +1,6 @@
 ---
 name: hibernate-jpa-validator
-description: Use when reviewing or writing Hibernate/JPA code involving @Entity, @ManyToOne, @OneToMany, @ManyToMany, @OneToOne, GenerationType, EntityManager, Session, SessionFactory, CriteriaBuilder, Spring Data JPA repositories, JpaRepository, BaseJpaRepository, HikariCP, @BatchSize, @EntityGraph, JPQL, @Transactional, @Lock, OptimisticLockException, LazyConnectionDataSourceProxy, read-write routing, OSIV, Testcontainers, @DataJpaTest, datasource-proxy, query count assertions, Flyway, schema migrations, ddl-auto, identifier generation strategies, association mappings, fetch plans, N+1 detection, batch processing, second-level caching, connection pooling, DTO projections, keyset pagination, JOIN FETCH with pagination, query optimization, inheritance strategies, Hibernate 6 features, or migration from Hibernate 5 to 6.
+description: Reviews and writes Hibernate/JPA code for performance and correctness, inspired by Hypersistence Optimizer. Triggers on @Entity, @ManyToOne, @OneToMany, @ManyToMany, @OneToOne, GenerationType, EntityManager, Session, SessionFactory, CriteriaBuilder, Spring Data JPA repositories, JpaRepository, BaseJpaRepository, HikariCP, @BatchSize, @EntityGraph, JPQL, @Transactional, @Lock, OptimisticLockException, LazyConnectionDataSourceProxy, read-write routing, OSIV, Testcontainers, @DataJpaTest, datasource-proxy, query count assertions, Flyway, ddl-auto, identifier generation, association mappings, fetch plans, N+1 detection, batch processing, second-level caching, connection pooling, DTO projections, keyset pagination, JOIN FETCH with pagination, query optimization, inheritance strategies, Hibernate 6 features, or migration from Hibernate 5 to 6. Does NOT cover Jakarta Bean Validation (@Valid, @NotNull, @Size, ConstraintValidator, validation groups) — that is a separate concern handled elsewhere.
 ---
 
 # Hibernate/JPA Validator
@@ -8,6 +8,8 @@ description: Use when reviewing or writing Hibernate/JPA code involving @Entity,
 ## Overview
 
 Full-spectrum Hibernate/JPA analysis inspired by Vlad Mihalcea's Hypersistence Optimizer. When reviewing any entity or JPA code, **run the full checklist** — not just what the user asked about. Performance is first-class, not an afterthought.
+
+This skill targets ORM concerns (mappings, fetch plans, SQL generation, transactions, schema). It does **not** cover Jakarta Bean Validation constraints (`@Valid`, `@NotNull`, `@Size`, `ConstraintValidator`, validation groups) — defer those to a Bean Validation skill or general Spring guidance.
 
 Core philosophy: show the generated SQL, explain the underlying JDBC behavior, then show the fix.
 
@@ -453,3 +455,4 @@ spring.flyway.out-of-order=false
 - Suggest `List` for `@ManyToMany`
 - Suggest loading entities just to update one field — use bulk JPQL UPDATE
 - Suggest query cache without explaining invalidation behavior
+- Recommend Jakarta Bean Validation patterns (`@Valid`, `@NotNull`, `ConstraintValidator`) — out of scope; defer to a Bean Validation skill
