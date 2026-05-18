@@ -4,108 +4,23 @@
 
 ## DTO Projections — Load Only What You Need
 
-Loading full entities for read-only display is the most common performance waste in JPA applications.
+Three flavors, all of which generate `SELECT <only-needed-columns>` instead of `SELECT *`:
 
-### Interface Projections (simplest)
-
-```java
-// Define the projection
-public interface PostSummary {
-    Long getId();
-    String getTitle();
-    @Value("#{target.author.firstName + ' ' + target.author.lastName}")
-    String getAuthorFullName();  // SpEL — computed at runtime
-}
-
-// Repository method — Hibernate generates optimal SELECT
-public interface PostRepository extends JpaRepository<Post, Long> {
-    List<PostSummary> findByStatus(String status);
-}
-```
-
-Generated SQL:
-```sql
-SELECT p.id, p.title, a.first_name, a.last_name
-FROM post p
-JOIN author a ON p.author_id = a.id
-WHERE p.status = ?
-```
-
-Not `SELECT *`.
-
-### Class/Record Projections (better for complex cases)
-
-```java
-// Java record (preferred in modern Java)
-public record PostSummaryDTO(Long id, String title, String authorName) {}
-
-// JPQL constructor expression
-@Query("SELECT new com.example.dto.PostSummaryDTO(p.id, p.title, a.name) " +
-       "FROM Post p JOIN p.author a WHERE p.status = :status")
-List<PostSummaryDTO> findSummaries(@Param("status") String status);
-```
-
-### Tuple Projections (dynamic queries)
-
-```java
-CriteriaBuilder cb = entityManager.getCriteriaBuilder();
-CriteriaQuery<Tuple> query = cb.createTupleQuery();
-Root<Post> post = query.from(Post.class);
-query.multiselect(
-    post.get("id").alias("id"),
-    post.get("title").alias("title")
-);
-List<Tuple> results = entityManager.createQuery(query).getResultList();
-```
+- **Interface projection** — `interface PostSummary { Long getId(); String getTitle(); }` returned from a derived/`@Query` method. SpEL via `@Value("#{target.author.firstName + ' ' + target.author.lastName}")` for computed fields.
+- **Record / class projection** — Java record + JPQL constructor expression: `SELECT new com.example.PostSummaryDTO(p.id, p.title, a.name) FROM Post p JOIN p.author a`.
+- **Tuple projection** — `cb.createTupleQuery()` for fully dynamic Criteria selections.
 
 ---
 
 ## JPQL Best Practices
 
-```java
-// ✅ Named parameter (safe, cacheable)
-@Query("SELECT p FROM Post p WHERE p.author.id = :authorId AND p.status = :status")
-List<Post> findByAuthorAndStatus(@Param("authorId") Long authorId,
-                                  @Param("status") String status);
-
-// ❌ String concatenation — SQL injection risk and no query plan cache reuse
-String jpql = "SELECT p FROM Post p WHERE p.status = '" + status + "'";
-```
-
-**JPQL limitations → use native SQL:**
-- Window functions (ROW_NUMBER, RANK, LAG)
-- CTEs (WITH clauses)
-- Database-specific functions
-- Reporting aggregations with complex GROUP BY
+Always named parameters (`:status`) — never string concatenation. Reach for native SQL when JPQL can't express it: window functions (`ROW_NUMBER`, `RANK`, `LAG`), CTEs (`WITH`), database-specific functions, complex `GROUP BY` aggregations.
 
 ---
 
 ## Criteria API — Only for Dynamic Queries
 
-```java
-// ✅ Criteria for truly dynamic query building
-public List<Post> search(PostSearchCriteria criteria) {
-    CriteriaBuilder cb = entityManager.getCriteriaBuilder();
-    CriteriaQuery<Post> query = cb.createQuery(Post.class);
-    Root<Post> post = query.from(Post.class);
-    List<Predicate> predicates = new ArrayList<>();
-
-    if (criteria.getStatus() != null) {
-        predicates.add(cb.equal(post.get("status"), criteria.getStatus()));
-    }
-    if (criteria.getAuthorId() != null) {
-        predicates.add(cb.equal(post.get("author").get("id"), criteria.getAuthorId()));
-    }
-    if (criteria.getFromDate() != null) {
-        predicates.add(cb.greaterThanOrEqualTo(post.get("createdAt"), criteria.getFromDate()));
-    }
-
-    query.where(predicates.toArray(new Predicate[0]));
-    return entityManager.createQuery(query).getResultList();
-}
-
-// ❌ Don't use Criteria for fixed queries — JPQL is far more readable
-```
+Use Criteria only when predicates are conditional at runtime (search forms, filter builders). For any fixed query, JPQL is dramatically more readable. The pattern is a `List<Predicate>` built conditionally from non-null criteria fields, then `query.where(predicates.toArray(new Predicate[0]))`.
 
 ---
 
@@ -348,38 +263,7 @@ vs. JOIN FETCH which loads `SELECT p.*, a.*` — every column of every entity.
 
 ## Native SQL for Reporting
 
-```java
-// Complex reporting query — don't try to express in JPQL
-@Query(
-    value = """
-        SELECT
-            a.name AS author_name,
-            COUNT(p.id) AS post_count,
-            AVG(LENGTH(p.body)) AS avg_body_length,
-            MAX(p.created_at) AS last_post_date
-        FROM author a
-        LEFT JOIN post p ON p.author_id = a.id
-        WHERE a.active = true
-        GROUP BY a.id, a.name
-        HAVING COUNT(p.id) > :minPosts
-        ORDER BY post_count DESC
-        """,
-    nativeQuery = true
-)
-List<Object[]> getAuthorStats(@Param("minPosts") int minPosts);
-
-// Prefer SqlResultSetMapping or native query to DTO for type safety:
-@SqlResultSetMapping(
-    name = "AuthorStatMapping",
-    classes = @ConstructorResult(
-        targetClass = AuthorStatDTO.class,
-        columns = {
-            @ColumnResult(name = "author_name", type = String.class),
-            @ColumnResult(name = "post_count", type = Long.class)
-        }
-    )
-)
-```
+Use `@Query(nativeQuery = true)` for window functions, CTEs, and complex `GROUP BY` aggregations. For type safety, map results into DTOs via `@SqlResultSetMapping` + `@ConstructorResult` instead of `List<Object[]>`.
 
 ---
 

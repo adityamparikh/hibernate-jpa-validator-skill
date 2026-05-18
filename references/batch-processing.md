@@ -4,19 +4,7 @@
 
 ## Why Batch Size Matters
 
-Without batching:
-```sql
-INSERT INTO post (title) VALUES ('A');  -- 1 roundtrip
-INSERT INTO post (title) VALUES ('B');  -- 1 roundtrip
-INSERT INTO post (title) VALUES ('C');  -- 1 roundtrip
--- 1000 inserts = 1000 roundtrips
-```
-
-With batching (batch_size=25):
-```sql
-INSERT INTO post (title) VALUES ('A'), ('B'), ..., ('Y');  -- 1 roundtrip for 25
--- 1000 inserts = 40 roundtrips
-```
+Without batching, 1000 inserts = 1000 roundtrips. With `batch_size=25`, the JDBC driver groups 25 inserts per network call → 40 roundtrips. Latency drops near-linearly with batch size up to the network/driver sweet spot (~25–50 for most databases).
 
 ---
 
@@ -44,30 +32,22 @@ logging.level.org.hibernate.engine.jdbc.batch.internal.BatchingBatch=DEBUG
 
 ## Flush/Clear Pattern for Large Batches
 
-Without flush/clear, the persistence context accumulates all entities in memory → OutOfMemoryError.
-
 ```java
 @Transactional
 public void importPosts(List<PostImportDTO> data) {
-    final int BATCH_SIZE = 25;
-
     for (int i = 0; i < data.size(); i++) {
-        PostImportDTO dto = data.get(i);
-        Post post = new Post(dto.getTitle(), dto.getBody());
-        entityManager.persist(post);
-
-        if ((i + 1) % BATCH_SIZE == 0) {
-            entityManager.flush();   // send batch to DB
-            entityManager.clear();   // release all entities from first-level cache
+        entityManager.persist(new Post(data.get(i).getTitle(), data.get(i).getBody()));
+        if ((i + 1) % 25 == 0) {
+            entityManager.flush();   // ship the batch
+            entityManager.clear();   // empty L1 cache so it doesn't grow unbounded
         }
     }
-    // final partial batch
-    entityManager.flush();
+    entityManager.flush();           // final partial batch
     entityManager.clear();
 }
 ```
 
-**With @Transactional on outer method:** flush writes but does NOT commit — transaction commits at method end.
+`flush()` ships SQL to the DB but does NOT commit — the outer `@Transactional` commits at method exit. Without `clear()`, the L1 cache holds every persisted entity until commit → OOM at scale.
 
 ---
 
@@ -110,31 +90,15 @@ Use only for raw data import pipelines where those features aren't needed.
 
 ## Bulk UPDATE/DELETE with JPQL
 
-Don't load entities just to update a field:
+Don't load entities just to update or delete them. Use `@Modifying` + JPQL `UPDATE`/`DELETE`:
 
 ```java
-// ❌ WRONG — loads 10,000 entities, dirty-checks each, generates 10,000 UPDATEs
-List<Post> posts = postRepository.findByStatus("DRAFT");
-posts.forEach(p -> p.setStatus("ARCHIVED"));
-
-// ✅ CORRECT — single SQL UPDATE
 @Modifying(clearAutomatically = true, flushAutomatically = true)
 @Query("UPDATE Post p SET p.status = 'ARCHIVED' WHERE p.status = 'DRAFT' AND p.createdAt < :cutoff")
 int archiveOldDrafts(@Param("cutoff") Instant cutoff);
 ```
 
-```java
-// ❌ WRONG — loads then deletes
-List<Post> spam = postRepository.findByType("SPAM");
-postRepository.deleteAll(spam);
-
-// ✅ CORRECT — single DELETE
-@Modifying(clearAutomatically = true)
-@Query("DELETE FROM Post p WHERE p.type = 'SPAM'")
-int deleteSpam();
-```
-
-**clearAutomatically = true** is critical: after a bulk DML, the first-level cache holds stale entities. Clearing it ensures subsequent reads go to DB.
+`clearAutomatically = true` is critical — after bulk DML, the L1 cache holds pre-DML entities; clearing forces subsequent reads to hit DB. `flushAutomatically = true` flushes pending changes first so they aren't overwritten by the bulk op.
 
 ---
 

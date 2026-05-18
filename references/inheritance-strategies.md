@@ -15,93 +15,25 @@
 
 ## SINGLE_TABLE (Default and Usually Best)
 
-All subclasses in one table. Discriminator column identifies the type.
+All subclasses in one table; `@DiscriminatorColumn` identifies the type, `@DiscriminatorValue` on each leaf. Polymorphic queries are a single `SELECT * FROM payment WHERE ...` — zero joins.
 
-```java
-@Entity
-@Table(name = "payment")
-@Inheritance(strategy = InheritanceType.SINGLE_TABLE)
-@DiscriminatorColumn(name = "payment_type", discriminatorType = DiscriminatorType.STRING, length = 20)
-public abstract class Payment {
-    @Id
-    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "payment_seq")
-    @SequenceGenerator(name = "payment_seq", sequenceName = "payment_id_seq", allocationSize = 50)
-    private Long id;
-
-    @Column(nullable = false)
-    private BigDecimal amount;
-
-    @Column(nullable = false)
-    private Instant createdAt;
-}
-
-@Entity
-@DiscriminatorValue("CREDIT_CARD")
-public class CreditCardPayment extends Payment {
-    @Column(name = "card_last4", length = 4)
-    private String cardLast4;
-
-    @Column(name = "card_brand", length = 20)
-    private String cardBrand;
-}
-
-@Entity
-@DiscriminatorValue("BANK_TRANSFER")
-public class BankTransferPayment extends Payment {
-    @Column(name = "account_number", length = 30)
-    private String accountNumber;
-    // card_last4 and card_brand are NULL for this type
-}
-```
-
-**Polymorphic query — zero joins:**
-```sql
-SELECT * FROM payment WHERE created_at > '2024-01-01';
-```
-
-**Trade-off:** Subclass-specific columns must be nullable. Add `@Check` constraints at DB level to enforce invariants.
-
-**Choose SINGLE_TABLE when:** Hierarchy is stable, subclasses are few, you need fast polymorphic queries.
+**Trade-off:** Subclass-specific columns must be nullable. Add DB-level `@Check` constraints to enforce per-subclass invariants. **Choose when:** hierarchy is stable, few subclasses, fast polymorphic queries matter.
 
 ---
 
 ## JOINED (Normalized)
 
-Each class has its own table with a FK to the root table.
+Each class has its own table with a FK to the root table (`@PrimaryKeyJoinColumn` is implicit on id). Polymorphic queries generate one `LEFT JOIN` per subclass table:
 
-```java
-@Entity
-@Table(name = "payment")
-@Inheritance(strategy = InheritanceType.JOINED)
-public abstract class Payment {
-    @Id
-    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "payment_seq")
-    @SequenceGenerator(name = "payment_seq", sequenceName = "payment_id_seq", allocationSize = 50)
-    private Long id;
-    private BigDecimal amount;
-}
-
-@Entity
-@Table(name = "credit_card_payment")
-public class CreditCardPayment extends Payment {
-    // Implicitly has: @PrimaryKeyJoinColumn on id
-    private String cardLast4;
-    private String cardBrand;
-}
-```
-
-Generated SQL for polymorphic query:
 ```sql
-SELECT p.id, p.amount, cc.card_last4, bt.account_number
+SELECT p.*, cc.*, bt.*
 FROM payment p
 LEFT JOIN credit_card_payment cc ON p.id = cc.id
 LEFT JOIN bank_transfer_payment bt ON p.id = bt.id
-WHERE p.created_at > '2024-01-01';
+WHERE ...
 ```
 
-**Choose JOINED when:** Subclass tables have many non-null-specific columns, DB normalization is required, hierarchy is complex.
-
-**Performance note:** Each polymorphic query adds a JOIN per subclass. For deep hierarchies (4+ levels), this is expensive.
+**Choose when:** subclasses have many non-null specific columns and DB normalization matters. **Avoid for deep hierarchies** (4+ levels) — JOIN count compounds.
 
 ---
 
@@ -130,32 +62,7 @@ SELECT * FROM crypto_payment;
 
 ## @MappedSuperclass — Not Inheritance
 
-Not JPA inheritance — the superclass is not an entity. Use for shared mapped fields.
-
-```java
-@MappedSuperclass
-public abstract class BaseEntity {
-    @Id
-    @GeneratedValue(strategy = GenerationType.SEQUENCE)
-    private Long id;
-
-    @CreatedDate
-    @Column(nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @LastModifiedDate
-    @Column(nullable = false)
-    private Instant updatedAt;
-
-    @Version
-    private int version;
-}
-
-@Entity
-public class Post extends BaseEntity { ... }  // gets id, createdAt, updatedAt, version
-```
-
-**Cannot** query by `BaseEntity` type — there's no shared table.
+Not JPA inheritance — the superclass is not an entity, just a holder for shared mapped fields (id, audit timestamps, `@Version`) that get inlined into each subclass's table. **You cannot query by the superclass type** — there's no shared table.
 
 ---
 

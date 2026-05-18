@@ -20,36 +20,14 @@ Observability is the first step toward performance. You cannot optimize what you
 ## Option 1: Hibernate Built-In (Dev Only)
 
 ```properties
-# application-dev.properties
 spring.jpa.show-sql=true
 spring.jpa.properties.hibernate.format_sql=true
-spring.jpa.properties.hibernate.use_sql_comments=true  # adds /* load Post */ before each SQL
-
+spring.jpa.properties.hibernate.use_sql_comments=true        # adds /* load Post */ tag
 logging.level.org.hibernate.SQL=DEBUG
-logging.level.org.hibernate.orm.jdbc.bind=TRACE  # bind parameters (Hibernate 6+)
+logging.level.org.hibernate.orm.jdbc.bind=TRACE              # bind params (Hibernate 6+; H5 uses org.hibernate.type.descriptor.sql)
 ```
 
-**Hibernate 5 equivalent for bind params:**
-```properties
-logging.level.org.hibernate.type.descriptor.sql=TRACE
-```
-
-Sample output with `format_sql=true` and `use_sql_comments=true`:
-```sql
-/* load com.example.Post */
-select
-    p1_0.id,
-    p1_0.title,
-    p1_0.status
-from
-    post p1_0
-where
-    p1_0.id=?
-
-binding parameter [1] as [BIGINT] - [42]
-```
-
-**Limitation:** Bind parameters log on a separate line — hard to correlate at scale. Use datasource-proxy or p6spy for complete statements.
+**Limitation:** bind parameters log on a separate line — hard to correlate at scale. For complete statements with values inline, use datasource-proxy or p6spy.
 
 ---
 

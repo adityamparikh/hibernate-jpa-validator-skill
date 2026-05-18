@@ -136,39 +136,9 @@ List<Post> findActiveOrderByDate(@Param("status") String status);
 
 ## Provider Configuration
 
-### Ehcache (most common)
-
-```xml
-<!-- ehcache.xml -->
-<config xmlns:...>
-    <cache alias="default">
-        <expiry><ttl unit="minutes">10</ttl></expiry>
-        <heap>1000</heap>
-        <offheap unit="MB">100</offheap>
-    </cache>
-    <cache alias="org.hibernate.cache.internal.StandardQueryCache">
-        <expiry><ttl unit="seconds">60</ttl></expiry>
-        <heap>500</heap>
-    </cache>
-</config>
-```
-
-### Caffeine (lightweight, in-process)
-
-```properties
-spring.jpa.properties.hibernate.cache.region.factory_class=\
-    org.hibernate.cache.caffeine.internal.CaffeineDomainDataRegionFactory
-spring.jpa.properties.hibernate.javax.cache.missing_cache_strategy=create-warn
-```
-
-### Redis (distributed, multi-node)
-
-For distributed caches, use `READ_WRITE` or `TRANSACTIONAL` — `NONSTRICT_READ_WRITE` has wider staleness windows across nodes.
-
-```properties
-spring.jpa.properties.hibernate.cache.region.factory_class=\
-    com.example.RedisRegionFactory
-```
+- **Ehcache** — most common; configure regions + TTLs in `ehcache.xml`. Remember to size `StandardQueryCache` separately.
+- **Caffeine** — lightweight in-process, use `CaffeineDomainDataRegionFactory`.
+- **Redis** — distributed; **use `READ_WRITE` or `TRANSACTIONAL`** — `NONSTRICT_READ_WRITE` has wider staleness windows across nodes.
 
 ---
 

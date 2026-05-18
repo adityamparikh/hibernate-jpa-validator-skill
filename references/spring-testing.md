@@ -6,20 +6,7 @@ Test the actual database, not a mock. Schemas, dialects, and SQL generation are 
 
 ## Testcontainers — Real Database in Tests
 
-Embedded H2/HSQLDB doesn't behave like PostgreSQL. Constraints, JSON types, sequence behavior, and SQL dialect all differ. **Use Testcontainers.**
-
-```xml
-<dependency>
-    <groupId>org.testcontainers</groupId>
-    <artifactId>postgresql</artifactId>
-    <scope>test</scope>
-</dependency>
-<dependency>
-    <groupId>org.testcontainers</groupId>
-    <artifactId>junit-jupiter</artifactId>
-    <scope>test</scope>
-</dependency>
-```
+Embedded H2/HSQLDB diverges from PostgreSQL/MySQL on constraints, JSON types, sequence behavior, and dialect. **Use Testcontainers.** Dependencies: `org.testcontainers:postgresql` + `org.testcontainers:junit-jupiter` (test scope).
 
 ### Spring Boot 3.1+: @ServiceConnection
 
@@ -27,24 +14,12 @@ Embedded H2/HSQLDB doesn't behave like PostgreSQL. Constraints, JSON types, sequ
 @SpringBootTest
 @Testcontainers
 class PostServiceIT {
-
-    @Container
-    @ServiceConnection
-    static PostgreSQLContainer<?> postgres =
-        new PostgreSQLContainer<>("postgres:16-alpine");
-
-    @Autowired
-    PostService postService;
-
-    @Test
-    void createsPost() {
-        Post p = postService.create("Hello");
-        assertThat(p.getId()).isNotNull();
-    }
+    @Container @ServiceConnection
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 }
 ```
 
-`@ServiceConnection` auto-wires the container into Spring Boot's datasource config — no manual `@DynamicPropertySource` needed.
+`@ServiceConnection` auto-wires the container into Spring Boot's datasource config — no manual `@DynamicPropertySource` boilerplate.
 
 ### Reusable Container (faster across test classes)
 
@@ -210,24 +185,7 @@ void dynamicUpdate_onlyDirtyColumns() {
 
 ## Mocking the Repository — Don't
 
-```java
-// ❌ ANTI-PATTERN — tests pass, prod fails
-@Mock
-PostRepository postRepository;
-
-@Test
-void getActive() {
-    when(postRepository.findByStatus("ACTIVE"))
-        .thenReturn(List.of(new Post(...)));
-    // This test verifies nothing about the actual SQL, mapping, or constraints
-}
-```
-
-Mock the repository ONLY when:
-- Testing pure business logic that happens to use a repository
-- The repository is well-tested by integration tests elsewhere
-
-For anything that touches mapping, JPQL, or SQL generation: real database, every time.
+A `@Mock PostRepository` with `when(...).thenReturn(...)` verifies nothing about SQL generation, mapping, or constraints — tests pass while prod fails. Mock the repository only when testing pure business logic that happens to *call* a repository (and the repository is covered by integration tests elsewhere). Anything touching mapping, JPQL, or SQL: real database, every time.
 
 ---
 

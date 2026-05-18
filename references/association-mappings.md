@@ -6,27 +6,15 @@ The four association types, their traps, and correct patterns. Target: Hibernate
 
 ## @ManyToOne — The Workhorse
 
-The most common association. Child holds the FK column.
+Child holds the FK. Always `fetch = FetchType.LAZY` and explicit `@JoinColumn(name = "...", nullable = ...)`.
 
 ```java
-// ❌ WRONG — EAGER is the JPA default, always override it
-@ManyToOne
-@JoinColumn(name = "author_id")
-private Author author;
-
-// ❌ WRONG — also missing nullable
-@ManyToOne(fetch = FetchType.EAGER)
-@JoinColumn(name = "author_id")
-private Author author;
-
-// ✅ CORRECT
 @ManyToOne(fetch = FetchType.LAZY)
 @JoinColumn(name = "author_id", nullable = false)
 private Author author;
 ```
 
-**Why EAGER is wrong:**
-Every `findById` on `Post` will automatically JOIN to `author`, even when you don't need it. With 5 EAGER associations you get 5 joins on every query — a JOIN bomb. "Fetch only what you need" is the first law of ORM performance.
+EAGER is JPA's default and is always wrong here — with 5 EAGER `@ManyToOne`s, every `findById` becomes a 5-way JOIN bomb regardless of what the caller needed.
 
 ---
 

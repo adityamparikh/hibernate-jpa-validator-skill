@@ -304,22 +304,6 @@ SELECT p.body FROM post p WHERE p.id = ?
 
 ## Hibernate Statistics
 
-```java
-@Autowired
-private EntityManagerFactory emf;
+`emf.unwrap(SessionFactory.class).getStatistics()` exposes aggregate counters. Key ones to track: `getQueryExecutionCount()` per request (N+1 smell), `getEntityLoadCount()`, L2 cache hit/miss counts, and `getFlushCount()` (unexpected flushes in read paths).
 
-public void logStats() {
-    Statistics stats = emf.unwrap(SessionFactory.class).getStatistics();
-    log.info("Entity load count: {}", stats.getEntityLoadCount());
-    log.info("Query execution count: {}", stats.getQueryExecutionCount());
-    log.info("L2 hit ratio: {}/{}", stats.getSecondLevelCacheHitCount(),
-        stats.getSecondLevelCacheHitCount() + stats.getSecondLevelCacheMissCount());
-    log.info("Connection count: {}", stats.getConnectCount());
-}
-```
-
-Key metrics to track:
-- `getQueryExecutionCount()` per request → detect N+1
-- `getEntityLoadCount()` → how many entities loaded
-- `getSecondLevelCacheHitCount()` vs `MissCount()` → cache effectiveness
-- `getFlushCount()` → unexpected flushes in read paths
+→ See `references/logging-and-monitoring.md` for surfacing these through Micrometer/Prometheus.

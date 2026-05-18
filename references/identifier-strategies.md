@@ -143,56 +143,19 @@ Book book = entityManager.unwrap(Session.class)
 
 ## Composite Keys
 
-### @IdClass (simpler, less invasive)
+Two options: `@IdClass` (separate non-`@Embeddable` class, fields duplicated on entity) or `@EmbeddedId` (one `@Embeddable` class held as a field). Prefer `@EmbeddedId` — it treats the key as a first-class value object and composes cleanly with `@MapsId` on associations:
 
 ```java
-public class OrderItemId implements Serializable {
-    private Long orderId;
-    private Long productId;
-    // equals, hashCode required!
-}
-
-@Entity
-@IdClass(OrderItemId.class)
-public class OrderItem {
-    @Id
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "order_id")
-    private Order order;
-
-    @Id
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "product_id")
-    private Product product;
-}
-```
-
-### @EmbeddedId (more OO, preferred for complex PKs)
-
-```java
-@Embeddable
-public class OrderItemId implements Serializable {
-    @Column(name = "order_id")
-    private Long orderId;
-    @Column(name = "product_id")
-    private Long productId;
-    // equals, hashCode required!
-}
-
 @Entity
 public class OrderItem {
     @EmbeddedId
     private OrderItemId id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @MapsId("orderId")
+    @MapsId("orderId")   // populates id.orderId from order.id — no separate FK column
     @JoinColumn(name = "order_id")
     private Order order;
 }
 ```
 
-**Rules for composite keys:**
-- Implement `Serializable`
-- Implement `equals`/`hashCode` based on all ID fields
-- Prefer `@EmbeddedId` when the ID is conceptually a first-class value object
-- Never use mutable fields as composite key components
+**Rules:** Key class is `Serializable`, implements `equals`/`hashCode` on all ID fields, and uses only immutable components.

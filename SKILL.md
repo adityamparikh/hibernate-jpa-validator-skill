@@ -139,14 +139,7 @@ private List<Comment> comments = new ArrayList<>();
 
 ### B5 — Fetch Types
 
-**All associations must be `FetchType.LAZY`.** JPA defaults:
-
-| Annotation | Default | Correct |
-|---|---|---|
-| `@ManyToOne` | **EAGER** ← always wrong | `fetch = LAZY` |
-| `@OneToOne` | **EAGER** ← always wrong | `fetch = LAZY` |
-| `@OneToMany` | LAZY | Keep |
-| `@ManyToMany` | LAZY | Keep |
+**All associations must be `FetchType.LAZY`.** `@ManyToOne` and `@OneToOne` default to EAGER — always override. `@OneToMany`/`@ManyToMany` default LAZY (keep).
 
 ### B6 — @DynamicUpdate / @DynamicInsert
 
@@ -207,32 +200,15 @@ Or use `datasource-proxy` / `p6spy` to count SQL statements per request.
 
 ### Fix Strategies (ordered by preference)
 
-1. **JOIN FETCH** — for one specific query loading a graph:
-```java
-@Query("SELECT p FROM Post p JOIN FETCH p.comments WHERE p.id = :id")
-Optional<Post> findWithComments(@Param("id") Long id);
-```
-
-2. **@EntityGraph** — declarative, reusable:
-```java
-@EntityGraph(attributePaths = {"comments", "tags"})
-Optional<Post> findById(Long id);
-```
-
-3. **@BatchSize** — when loading collections for multiple parents:
+1. **JOIN FETCH** — one-off graph load via `@Query("... JOIN FETCH p.comments ...")`
+2. **@EntityGraph** — declarative, reusable: `@EntityGraph(attributePaths = {"comments", "tags"})` on the repo method
+3. **@BatchSize** — loading the same collection for many parents; generates `WHERE post_id IN (?, ?, …)`:
 ```java
 @BatchSize(size = 25)
 @OneToMany(mappedBy = "post")
 private List<Comment> comments;
-// Generates: SELECT ... WHERE post_id IN (?, ?, ..., ?)  ← 25 at a time
 ```
-
-4. **@Fetch(FetchMode.SUBSELECT)** — load all child collections in one query:
-```java
-@Fetch(FetchMode.SUBSELECT)
-@OneToMany(mappedBy = "post")
-private List<Comment> comments;
-```
+4. **@Fetch(FetchMode.SUBSELECT)** — one extra subselect query loads child collections for *all* parents already in the persistence context. Beware: fires even when you only iterate one parent.
 
 **MultipleBagFetchException:** You cannot JOIN FETCH two `List` (bag) collections. Fix: use `Set` or fetch in separate queries.
 
@@ -244,18 +220,7 @@ private List<Comment> comments;
 
 ### Use DTO Projections for Read-Only Data
 
-```java
-// ❌ WRONG — loads full entity graph just to render a table
-List<Post> posts = postRepository.findAll();
-
-// ✅ CORRECT — loads only what you need
-public interface PostSummary {
-    Long getId();
-    String getTitle();
-    String getAuthorName();  // from @Column(name="author_name")
-}
-List<PostSummary> posts = postRepository.findAllProjectedBy();
-```
+Use interface or class projections (`findAllProjectedBy()` returning a `PostSummary` interface) instead of full entities for list/table views — loads only the columns you select, no dirty-check snapshot, no lazy-load traps.
 
 ### Pagination: Keyset over OFFSET
 
@@ -280,18 +245,7 @@ spring.jpa.properties.hibernate.order_inserts=true
 spring.jpa.properties.hibernate.order_updates=true
 ```
 
-**Flush/clear to prevent OOM on large batches:**
-```java
-for (int i = 0; i < entities.size(); i++) {
-    entityManager.persist(entities.get(i));
-    if (i % 25 == 0) {
-        entityManager.flush();
-        entityManager.clear();
-    }
-}
-```
-
-**IDENTITY generation breaks batching** — this is the primary reason to use SEQUENCE.
+Flush + clear every `batch_size` iterations to prevent L1-cache OOM. **`IDENTITY` generation silently disables JDBC batching** (Hibernate must round-trip per insert to read the generated key) — the primary reason to prefer `SEQUENCE`.
 
 → See `references/batch-processing.md` for StatelessSession, JPQL bulk operations, p6spy verification.
 
@@ -316,19 +270,12 @@ for (int i = 0; i < entities.size(); i++) {
 
 ## G: Connection Pool Tuning
 
-HikariCP is the standard. Key settings:
+HikariCP defaults are mostly fine. Non-obvious settings to set explicitly:
 
-```yaml
-spring:
-  datasource:
-    hikari:
-      maximum-pool-size: 10        # start here: (cores * 2) + effective_spindle_count
-      minimum-idle: 10             # = maximum for fixed pool (HikariCP recommendation)
-      connection-timeout: 30000    # 30s max wait for connection
-      idle-timeout: 600000         # 10m
-      max-lifetime: 1800000        # 30m (< DB wait_timeout)
-      leak-detection-threshold: 2000  # flag connections open > 2s
-```
+- `maximum-pool-size` — start at `(cores * 2) + effective_spindle_count`, then measure
+- `minimum-idle` = `maximum-pool-size` (HikariCP recommends a fixed pool over elastic sizing)
+- `max-lifetime` must be **less than** the DB's `wait_timeout` / load-balancer idle timeout
+- `leak-detection-threshold: 2000` — flag connections held > 2s (catches missed transactions)
 
 → See `references/connection-pooling.md` for pool sizing formula, metrics, statement caching.
 
@@ -349,17 +296,7 @@ spring:
 9. Returning entities from REST controllers — silent N+1 with OSIV; use DTOs
 10. `spring.jpa.open-in-view=true` (the default) — masks N+1, holds connections
 
-```java
-// ❌ WRONG — stale cache after bulk update
-@Modifying
-@Query("UPDATE Post p SET p.status = :status WHERE p.author.id = :authorId")
-int updateStatus(@Param("status") String status, @Param("authorId") Long authorId);
-
-// ✅ CORRECT
-@Modifying(clearAutomatically = true, flushAutomatically = true)
-@Query("UPDATE Post p SET p.status = :status WHERE p.author.id = :authorId")
-int updateStatus(@Param("status") String status, @Param("authorId") Long authorId);
-```
+`@Modifying` bulk updates need `clearAutomatically = true, flushAutomatically = true` — otherwise the L1 cache still holds the pre-update entities and subsequent reads return stale data.
 
 **Repository base class:** Prefer Hypersistence Utils' `BaseJpaRepository` over `JpaRepository` — it omits `findAll()`/`save()` and exposes explicit `persist()`/`merge()`/`getReferenceById()`.
 
@@ -369,25 +306,14 @@ int updateStatus(@Param("status") String status, @Param("authorId") Long authorI
 
 ## I: Transactions and Concurrency
 
-**Defaults to enforce:**
+**Defaults to enforce:** `spring.jpa.open-in-view=false`. `@Transactional(readOnly = true)` on every read service method, `@Transactional` on writes. Service layer owns transactions, not repositories.
 
-```properties
-spring.jpa.open-in-view=false   # turn off OSIV
-```
-
-```java
-@Transactional(readOnly = true)   // every read service method
-@Transactional                    // every write service method (default propagation REQUIRED)
-```
-
-**Quick checklist:**
-- Service layer owns `@Transactional`, not repositories
-- `readOnly = true` on every read path (skips dirty-check snapshot)
-- No self-invocation of `@Transactional` methods (Spring AOP bypassed)
+**Less-obvious checklist:**
+- No self-invocation of `@Transactional` methods (Spring AOP proxy is bypassed)
 - `@Version` on every mutable entity (optimistic locking)
-- Pessimistic locks have a timeout
-- External API calls outside the transaction (use `@TransactionalEventListener(AFTER_COMMIT)`)
-- Read-write routing wrapped in `LazyConnectionDataSourceProxy`
+- Pessimistic locks always have an explicit timeout
+- External API calls live **outside** the transaction — use `@TransactionalEventListener(AFTER_COMMIT)`
+- Read-write routing must wrap the routing DataSource in `LazyConnectionDataSourceProxy` (otherwise the connection is acquired before Spring knows whether to route read or write)
 
 → See `references/spring-transactions.md` for propagation rules, isolation levels, locking, `LazyConnectionDataSourceProxy`, read-write routing, OSIV.
 
@@ -405,9 +331,9 @@ spring.jpa.open-in-view=false   # turn off OSIV
 ```java
 @DataJpaTest
 @Testcontainers
-@AutoConfigureTestDatabase(replace = Replace.NONE)
+@AutoConfigureTestDatabase(replace = Replace.NONE)  // critical — without this Spring substitutes H2
 class PostRepositoryTest {
-    @Container @ServiceConnection
+    @Container @ServiceConnection  // @ServiceConnection auto-wires Hikari to the container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
 }
 ```
@@ -426,12 +352,7 @@ class PostRepositoryTest {
 - `CREATE INDEX CONCURRENTLY` for any production index addition (PostgreSQL)
 - Test data-changing migrations against a copy of production data
 
-```properties
-spring.jpa.hibernate.ddl-auto=validate
-spring.flyway.enabled=true
-spring.flyway.validate-on-migrate=true
-spring.flyway.out-of-order=false
-```
+Standard config: `spring.jpa.hibernate.ddl-auto=validate`, `spring.flyway.enabled=true`, `spring.flyway.validate-on-migrate=true`, `spring.flyway.out-of-order=false`.
 
 → See `references/spring-schema-migrations.md` for Flyway config, repeatable migrations, zero-downtime patterns, DDL validation, multi-tenant schemas.
 

@@ -18,29 +18,9 @@ Reference for Section B of SKILL.md. Run every item against every entity under r
 
 ## 2. Identifier Rules
 
-```java
-// ❌ WRONG — IDENTITY disables JDBC batching
-@Id
-@GeneratedValue(strategy = GenerationType.IDENTITY)
-private Long id;
+Use `SEQUENCE` with a pooled optimizer (`allocationSize=50`). Never `IDENTITY` (disables JDBC batching), `AUTO` (unpredictable per database), or `TABLE` (pessimistic locking).
 
-// ❌ WRONG — AUTO is unpredictable per database
-@Id
-@GeneratedValue(strategy = GenerationType.AUTO)
-private Long id;
-
-// ❌ WRONG — TABLE uses pessimistic locking
-@Id
-@GeneratedValue(strategy = GenerationType.TABLE)
-private Long id;
-
-// ✅ CORRECT — SEQUENCE with pooled optimizer
-@Id
-@GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "post_seq")
-@SequenceGenerator(name = "post_seq", sequenceName = "post_id_seq",
-    allocationSize = 50)  // fetch 50 IDs at once — minimal DB roundtrips
-private Long id;
-```
+→ See `references/identifier-strategies.md` for the full code and why each alternative fails.
 
 ---
 
@@ -190,56 +170,19 @@ public class Post { ... }
 
 ## 6. Audit Fields Pattern
 
-```java
-@MappedSuperclass
-@EntityListeners(AuditingEntityListener.class)
-public abstract class BaseEntity {
-
-    @CreatedDate
-    @Column(nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @LastModifiedDate
-    @Column(nullable = false)
-    private Instant updatedAt;
-
-    @Version
-    private int version;  // optimistic locking — prevents lost updates
-}
-```
-
-Flag entities that: modify shared data without `@Version`, lack audit timestamps.
+Use a `@MappedSuperclass` `BaseEntity` with `@CreatedDate`/`@LastModifiedDate` (Spring Data auditing) + `@Version` (optimistic locking). Flag entities that modify shared data without `@Version` or lack audit timestamps.
 
 ---
 
 ## 7. Enum Mapping
 
-```java
-// ❌ WRONG — ordinal breaks when enum order changes
-@Enumerated(EnumType.ORDINAL)
-private Status status;
-
-// ✅ CORRECT — string is resilient to reordering
-@Enumerated(EnumType.STRING)
-@Column(length = 30)
-private Status status;
-```
+Always `@Enumerated(EnumType.STRING)` — `ORDINAL` breaks the instant anyone reorders or inserts an enum value.
 
 ---
 
 ## 8. Temporal Types
 
-```java
-// ❌ WRONG — java.util.Date is mutable and imprecise
-@Temporal(TemporalType.TIMESTAMP)
-private Date createdAt;
-
-// ✅ CORRECT — java.time types map natively in Hibernate 6
-private Instant createdAt;      // UTC timestamp
-private LocalDate birthDate;    // date without time
-private LocalDateTime scheduledAt;  // local datetime (no TZ)
-private OffsetDateTime eventAt; // with TZ offset
-```
+Use `java.time` types directly (`Instant`, `LocalDate`, `LocalDateTime`, `OffsetDateTime`) — Hibernate 6 maps them natively. `@Temporal` + `java.util.Date` is a legacy carryover; remove it.
 
 ---
 
@@ -283,32 +226,10 @@ private String name;
 
 On PostgreSQL and MySQL (utf8mb4), `@Nationalized` is a no-op — all VARCHAR columns are Unicode. Only needed for SQL Server and Oracle.
 
-### Numeric Column Types
+### Numeric and Binary Types
 
-```java
-// ❌ float/double — floating-point rounding errors
-private double price;
-
-// ✅ BigDecimal for money/accounting
-@Column(precision = 19, scale = 4)  // 19 digits total, 4 decimal places
-private BigDecimal price;
-
-// ✅ Integer types — choose smallest that fits
-private int viewCount;       // INT (up to ~2.1 billion)
-private long totalViews;     // BIGINT (up to ~9.2 * 10^18)
-```
-
-### Binary / UUID Types
-
-```java
-// ✅ Native UUID type (PostgreSQL)
-@Column(columnDefinition = "uuid")
-private UUID externalId;
-
-// ✅ Binary(16) for UUID on MySQL (more efficient than VARCHAR(36))
-@Column(columnDefinition = "BINARY(16)")
-private UUID externalId;
-```
+- Money/accounting: `BigDecimal` with explicit `precision`/`scale`, never `float`/`double`.
+- UUID: native `uuid` columnDefinition on PostgreSQL; `BINARY(16)` on MySQL (vs. wasteful `VARCHAR(36)`).
 
 ---
 
