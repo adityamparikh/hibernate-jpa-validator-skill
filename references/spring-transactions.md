@@ -8,40 +8,15 @@ Transactions are where most JPA correctness bugs hide. Get the boundary, propaga
 
 ### Rule: Service Layer Owns the Transaction
 
-```java
-// ❌ WRONG — @Transactional on the repository — too granular
-public interface PostRepository extends JpaRepository<Post, Long> {
-    @Transactional  // each call is its own tx — N+1 becomes N+1 transactions
-    List<Post> findAll();
-}
-
-// ✅ CORRECT — service method opens the transaction; repository inherits it
-@Service
-public class PostService {
-
-    @Transactional(readOnly = true)
-    public List<PostDTO> getActivePosts() {
-        return postRepository.findByStatus("ACTIVE").stream()
-            .map(this::toDTO)
-            .toList();
-    }
-}
-```
-
-`JpaRepository` methods are already `@Transactional` internally — explicit annotation only matters at the layer that defines the unit of work.
+`@Transactional` belongs on service methods that define a unit of work — not on repository methods (`JpaRepository` is already internally `@Transactional`, and a repo-level annotation turns each call into its own tx, multiplying N+1 into N+1 transactions).
 
 ### Rule: Always Use `readOnly = true` for Reads
 
-```java
-@Transactional(readOnly = true)
-public List<PostSummary> findSummaries() { ... }
-```
-
-What `readOnly = true` actually does:
-1. Hibernate sets `FlushMode.MANUAL` — no auto-flush at query boundaries
+What `readOnly = true` actually does (beyond the obvious):
+1. Sets `FlushMode.MANUAL` — no auto-flush at query boundaries
 2. Skips dirty-check snapshot creation — saves heap on large result sets
-3. Spring sets the JDBC connection to read-only (driver-dependent — PostgreSQL honors this; MySQL ignores it)
-4. **Does NOT prevent writes** — entities loaded are still mutable
+3. Sets the JDBC connection read-only flag (PostgreSQL honors it; MySQL ignores it)
+4. **Does NOT prevent writes** — loaded entities are still mutable; this is a hint to Hibernate, not a guard
 
 ### Anti-Pattern: @Transactional on Public Constructors / Self-Calls
 
@@ -104,14 +79,7 @@ public void logOrder(Order o) { ... }
 | `REPEATABLE_READ` | Dirty + non-repeatable reads | MySQL InnoDB |
 | `SERIALIZABLE` | All anomalies | Never default — heavy locking / SSI conflicts |
 
-```java
-@Transactional(isolation = Isolation.REPEATABLE_READ)
-public BigDecimal computeReportTotal(Long reportId) {
-    // Need consistent reads across multiple queries within the tx
-}
-```
-
-**Most application code should use the database default.** Only override when you have a specific anomaly to prevent.
+**Most application code should use the database default.** Only override when you have a specific anomaly to prevent (`@Transactional(isolation = Isolation.REPEATABLE_READ)` for reports requiring consistent reads across multiple queries).
 
 ---
 
@@ -119,25 +87,7 @@ public BigDecimal computeReportTotal(Long reportId) {
 
 ### Optimistic Locking (default — strongly recommended)
 
-```java
-@Entity
-public class Account {
-    @Id Long id;
-
-    @Version
-    private Long version;  // Hibernate adds WHERE version = ? to UPDATEs
-
-    private BigDecimal balance;
-}
-```
-
-On UPDATE, Hibernate generates:
-```sql
-UPDATE account SET balance = ?, version = version + 1
-WHERE id = ? AND version = ?
-```
-
-If `rowsAffected == 0` → `OptimisticLockException`. Application retries.
+Add a `@Version Long version;` field. On UPDATE, Hibernate appends `WHERE version = ?` and increments it; if `rowsAffected == 0` → `OptimisticLockException` and the application retries. No DB locks held.
 
 ### Pessimistic Locking (only when you must)
 
@@ -285,15 +235,4 @@ Critical for: external API calls, message publishing, cache invalidation — any
 
 ## Open Session In View (OSIV)
 
-Spring Boot defaults `spring.jpa.open-in-view=true`. This keeps the Hibernate session open for the entire HTTP request — convenient, but:
-- Hides lazy-loading in the view layer (silent N+1)
-- Holds a database connection for the response duration
-- Masks transaction boundary issues during testing
-
-**Recommendation: turn it off.**
-
-```properties
-spring.jpa.open-in-view=false
-```
-
-Then service methods MUST return DTOs (not entities with lazy associations) — which is the correct architecture anyway.
+Spring Boot defaults `spring.jpa.open-in-view=true` — keeps the Hibernate session open for the entire HTTP request. This hides lazy-loading bugs in the view layer (silent N+1), holds the DB connection for the response duration, and masks transaction boundary problems in tests. **Turn it off** (`spring.jpa.open-in-view=false`); service methods must then return DTOs, which is the correct architecture anyway.

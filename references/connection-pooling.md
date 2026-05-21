@@ -63,18 +63,7 @@ pool_size = (4 * 2) + 1 = 9 → round to 10
 
 ## Connection Validation
 
-```yaml
-# HikariCP auto-validates connections using JDBC4 isValid() by default.
-# Only set connection-test-query if using a pre-JDBC4 driver:
-hikari:
-  connection-test-query: SELECT 1
-
-# For MySQL: set max-lifetime below wait_timeout
-hikari:
-  max-lifetime: 1800000  # 30m — must be < MySQL wait_timeout (default 8h usually OK)
-```
-
-For PostgreSQL, configure `keepalive-time` to avoid connection drops through load balancers with short idle timeouts.
+HikariCP auto-validates via JDBC4 `isValid()` — only set `connection-test-query: SELECT 1` for pre-JDBC4 drivers. On MySQL, keep `max-lifetime` below `wait_timeout` (default 8h, usually fine). On PostgreSQL behind load balancers, set `keepalive-time` to prevent idle-timeout drops.
 
 ---
 
@@ -210,25 +199,4 @@ public FlexyPoolDataSource<HikariDataSource> flexyPoolDataSource(
 
 ## Multiple Data Sources
 
-For read/write split:
-
-```java
-@Configuration
-public class DataSourceConfig {
-
-    @Primary
-    @Bean("writeDataSource")
-    @ConfigurationProperties("spring.datasource.write.hikari")
-    public DataSource writeDataSource() {
-        return DataSourceBuilder.create().type(HikariDataSource.class).build();
-    }
-
-    @Bean("readDataSource")
-    @ConfigurationProperties("spring.datasource.read.hikari")
-    public DataSource readDataSource() {
-        return DataSourceBuilder.create().type(HikariDataSource.class).build();
-    }
-}
-```
-
-Smaller read pool is fine since read queries are typically faster and less contended.
+Standard pattern for read/write split: define `writeDataSource` (`@Primary`) and `readDataSource` `@Bean`s with `@ConfigurationProperties("spring.datasource.write.hikari")` / `...read.hikari`. The read pool can be smaller — read queries are typically faster and less contended. For routing logic, see `references/spring-transactions.md` (`AbstractRoutingDataSource` + `LazyConnectionDataSourceProxy`).

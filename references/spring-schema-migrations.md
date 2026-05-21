@@ -31,29 +31,9 @@ spring.jpa.hibernate.ddl-auto=none
 
 ## Flyway
 
-```xml
-<dependency>
-    <groupId>org.flywaydb</groupId>
-    <artifactId>flyway-core</artifactId>
-</dependency>
-<!-- Required for PostgreSQL 11+ in Flyway 9+ -->
-<dependency>
-    <groupId>org.flywaydb</groupId>
-    <artifactId>flyway-database-postgresql</artifactId>
-</dependency>
-```
+Add `org.flywaydb:flyway-core` (plus `flyway-database-postgresql` for PostgreSQL 11+ on Flyway 9+).
 
-### Migration File Structure
-
-```
-src/main/resources/db/migration/
-├── V1__create_post_table.sql
-├── V2__add_author_fk.sql
-├── V3__add_post_status_index.sql
-└── V4__add_slug_unique_constraint.sql
-```
-
-Naming: `V<version>__<description>.sql`. Two underscores. Flyway splits the version on `.` (and `_`) and compares each segment numerically — so `V1.10` correctly sorts **after** `V1.2`, not before. Trailing zeros are normalised (`V1.0` == `V1`).
+Migrations live in `src/main/resources/db/migration/` and follow `V<version>__<description>.sql` (two underscores). Version segments are compared **numerically per dot-separated component** — so `V1.10` correctly sorts *after* `V1.2`, and `V1.0 == V1`. Don't assume lexical ordering.
 
 ### Properties
 

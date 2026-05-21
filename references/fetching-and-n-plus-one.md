@@ -4,23 +4,7 @@
 
 ## How N+1 Happens
 
-```java
-// This service method generates N+1:
-public List<PostDTO> getAllPosts() {
-    List<Post> posts = postRepository.findAll();  // SELECT * FROM post (1 query)
-    return posts.stream()
-        .map(p -> new PostDTO(
-            p.getId(),
-            p.getTitle(),
-            p.getAuthor().getName()  // SELECT * FROM author WHERE id=? (N queries!)
-        ))
-        .toList();
-}
-```
-
-For 100 posts: 1 + 100 = 101 SQL queries. Hibernate logs each as DEBUG — users experience it as slow page loads.
-
-The root cause is always the same: **lazy association accessed in a loop without a pre-fetch plan**.
+Root cause is always the same: **lazy association accessed in a loop without a pre-fetch plan.** One `findAll()` plus per-row `p.getAuthor().getName()` in a stream = 1 + N queries. The fix is choosing the right fetch strategy below — never EAGER.
 
 ---
 
@@ -71,46 +55,13 @@ Add `spy.properties` and `p6spy` dependency. Logs every SQL with timing.
 
 ### 1. JOIN FETCH (explicit JPQL)
 
-Best for: a single query where you always need the association.
-
-```java
-// JPQL
-@Query("SELECT p FROM Post p JOIN FETCH p.author WHERE p.status = :status")
-List<Post> findActiveWithAuthor(@Param("status") String status);
-
-// With multiple levels
-@Query("SELECT p FROM Post p JOIN FETCH p.author a JOIN FETCH a.address WHERE p.id = :id")
-Optional<Post> findWithFullGraph(@Param("id") Long id);
-```
-
-**Limitation:** Cannot `JOIN FETCH` two collection associations in one query → `MultipleBagFetchException` (or Cartesian product with Sets).
+Best for one specific query that always needs the association. Standard `@Query("... JOIN FETCH p.author ...")` — chain multiple `JOIN FETCH`es for multi-level graphs. **Limitation:** cannot `JOIN FETCH` two `List` (bag) collections → `MultipleBagFetchException`.
 
 ### 2. @EntityGraph (declarative, reusable)
 
-Best for: Spring Data repository methods where you want different fetch plans per call.
+Best for Spring Data when different callers need different fetch plans. Either inline (`@EntityGraph(attributePaths = {"author", "tags"})`) or via `@NamedEntityGraph` on the entity.
 
-```java
-// Define on entity
-@Entity
-@NamedEntityGraph(
-    name = "Post.withAuthorAndTags",
-    attributeNodes = {
-        @NamedAttributeNode("author"),
-        @NamedAttributeNode("tags")
-    }
-)
-public class Post { ... }
-
-// Use in repository
-@EntityGraph("Post.withAuthorAndTags")
-Optional<Post> findById(Long id);
-
-// Or inline (Hibernate 6+ style)
-@EntityGraph(attributePaths = {"author", "tags"})
-List<Post> findByStatus(String status);
-```
-
-**Note:** `@EntityGraph` generates a LEFT JOIN FETCH — returns duplicate roots when fetching collections. Use `DISTINCT` or a `Set` return type, or use `@QueryHints`.
+**Watch out:** `@EntityGraph` generates LEFT JOIN FETCH — collection fetches return duplicate roots. Use `DISTINCT` in JPQL, a `Set` return type, or `@QueryHints(HINT_PASS_DISTINCT_THROUGH=false)`.
 
 ### 3. @BatchSize (N queries → ceil(N/batch) queries)
 

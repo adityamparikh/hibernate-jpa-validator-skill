@@ -4,15 +4,7 @@
 
 ## Repository Hierarchy
 
-```
-Repository (marker)
-└── CrudRepository<T, ID>
-    └── PagingAndSortingRepository<T, ID>
-        └── JpaRepository<T, ID>
-            └── Your PostRepository
-```
-
-Extend `JpaRepository` unless you specifically want to hide methods (then extend `CrudRepository` or `Repository`).
+`Repository` → `CrudRepository` → `PagingAndSortingRepository` → `JpaRepository`. Extend `JpaRepository` unless you specifically want to hide methods.
 
 ### The JpaRepository Trap: `findAll()` and `findById()`
 
@@ -89,46 +81,17 @@ Even when `save()` happens to do the right thing for `@GeneratedValue`, `persist
 
 ## Derived Query Methods
 
-```java
-// ✅ Simple cases
-List<Post> findByStatus(String status);
-Optional<Post> findBySlug(String slug);
-boolean existsBySlug(String slug);
-long countByStatus(String status);
+Standard derived shapes: `findByXxx`, `existsByXxx`, `countByXxx`, `findTop10ByXxxOrderByYyyDesc`, with optional `Pageable`/`Sort`/`Limit` params.
 
-// ✅ With modifiers
-List<Post> findTop10ByStatusOrderByCreatedAtDesc(String status);
-Page<Post> findByStatus(String status, Pageable pageable);
-Slice<Post> findByStatus(String status, Pageable pageable);  // no COUNT query
+**Slice vs Page:** `Page` runs an extra `COUNT(*)` to compute `getTotalPages()` (slow on large tables). `Slice` just fetches `pageSize + 1` rows and reports `hasNext()`. Use `Slice` whenever the UI doesn't need a total.
 
-// ❌ Don't let derived methods generate inefficient SQL
-List<Post> findByAuthorNameContaining(String name);
-// Generates: WHERE a.name LIKE '%name%' — full table scan, no index
-// Use @Query with native FULLTEXT search instead
-```
-
-**Slice vs Page:**
-- `Page` runs a COUNT query to compute total pages (slow on large tables)
-- `Slice` only checks if there's a next page (one extra row) — use when you don't need total count
+**Watch out:** `findByAuthorNameContaining(name)` generates `WHERE a.name LIKE '%name%'` — full table scan, no index. Use a `@Query` with native fulltext (PostgreSQL `tsvector`, MySQL `MATCH AGAINST`) instead.
 
 ---
 
 ## @Query with JPQL
 
-```java
-// Named parameters (preferred)
-@Query("SELECT p FROM Post p WHERE p.author.id = :authorId AND p.createdAt >= :from")
-List<Post> findByAuthorSince(@Param("authorId") Long authorId, @Param("from") Instant from);
-
-// DTO projection with constructor expression
-@Query("SELECT new com.example.dto.PostSummary(p.id, p.title, a.name) " +
-       "FROM Post p JOIN p.author a WHERE p.status = 'ACTIVE'")
-List<PostSummary> findActiveSummaries();
-
-// Avoid SELECT * when only a few fields needed
-@Query("SELECT p.id, p.title, p.slug FROM Post p WHERE p.status = :status")
-List<Object[]> findIdTitleSlug(@Param("status") String status);  // or interface projection
-```
+Named parameters (`:authorId`) only — never string concatenation. For projections, use JPQL constructor expressions (`SELECT new com.example.PostSummary(p.id, p.title, a.name) FROM Post p JOIN p.author a`) or interface projections rather than `List<Object[]>`.
 
 ---
 
@@ -189,186 +152,39 @@ For pure bulk processing (no entity lifecycle), prefer `StatelessSession` — se
 
 ## Query By Example (QBE)
 
-```java
-public interface PostRepository extends JpaRepository<Post, Long>,
-                                        QueryByExampleExecutor<Post> { }
+Extend `QueryByExampleExecutor<Post>`, build a probe entity with non-null fields → equality predicates, run `findAll(Example.of(probe, matcher))`.
 
-// Build a probe entity — non-null fields become equality predicates
-Post probe = new Post();
-probe.setStatus("ACTIVE");
-probe.setAuthor(authorRepository.getReferenceById(authorId));
-
-ExampleMatcher matcher = ExampleMatcher.matchingAll()
-    .withMatcher("title", contains().ignoreCase())
-    .withIgnorePaths("createdAt", "updatedAt");
-
-List<Post> results = postRepository.findAll(Example.of(probe, matcher));
-```
-
-**Limitations** (why you usually want `Specification` instead):
-- No `OR` predicates — only `AND`
-- No range predicates (`<`, `>`, `BETWEEN`)
-- No `IN` lists or nested associations beyond `equal`
-- Probe must be a fully constructed entity — awkward for required fields
-
-Use QBE only for simple "match these fields" search forms. For anything richer, use `Specification` or Blaze Persistence.
+**Severely limited:** AND only (no OR), no range/`IN`/nested associations beyond equality. Use only for trivial "match these fields" search forms; reach for `Specification` for anything else.
 
 ---
 
 ## @Modifying — clearAutomatically is Required
 
-```java
-// ❌ WRONG — stale first-level cache after bulk update
-@Modifying
-@Query("UPDATE Post p SET p.status = :status WHERE p.author.id = :authorId")
-int updateStatusByAuthor(@Param("status") String status, @Param("authorId") Long authorId);
-
-// ✅ CORRECT
-@Modifying(clearAutomatically = true, flushAutomatically = true)
-@Query("UPDATE Post p SET p.status = :status WHERE p.author.id = :authorId")
-int updateStatusByAuthor(@Param("status") String status, @Param("authorId") Long authorId);
-```
-
-`flushAutomatically = true`: flush pending changes before executing the DML (so you don't overwrite unsaved changes).
-`clearAutomatically = true`: clear first-level cache after DML (so subsequent reads reflect the update).
+`@Modifying(clearAutomatically = true, flushAutomatically = true)` is mandatory on bulk DML. Without `flushAutomatically`, pending L1 changes get clobbered by the bulk UPDATE; without `clearAutomatically`, subsequent reads return pre-update cached entities.
 
 ---
 
 ## Projections
 
-### Interface Projection (simplest, lazy)
-
-```java
-public interface PostListView {
-    Long getId();
-    String getTitle();
-    String getSlug();
-
-    // Nested projection — avoids loading full Author entity
-    AuthorView getAuthor();
-
-    interface AuthorView {
-        String getName();
-    }
-}
-
-List<PostListView> findByStatus(String status);
-// SQL: SELECT p.id, p.title, p.slug, a.name FROM post p JOIN author a ...
-```
-
-### Record Projection (Java 16+, recommended for DTOs)
-
-```java
-public record PostRecord(Long id, String title, String slug) {}
-
-@Query("SELECT new com.example.dto.PostRecord(p.id, p.title, p.slug) FROM Post p WHERE p.status = :status")
-List<PostRecord> findAsRecords(@Param("status") String status);
-```
+See `references/query-optimization.md` for the projection mechanics. Spring Data-specific notes: interface projections support **nested** views (e.g., a `PostListView` with an `AuthorView getAuthor()` returning only `id`/`name` — generates a JOIN with only those columns, never loads the full `Author` entity).
 
 ---
 
 ## Custom Repository Fragments
 
-For complex queries that don't fit in `@Query`:
-
-```java
-// 1. Define fragment interface
-public interface PostRepositoryCustom {
-    List<Post> searchWithFilters(PostSearchCriteria criteria);
-}
-
-// 2. Implement it
-public class PostRepositoryCustomImpl implements PostRepositoryCustom {
-
-    @PersistenceContext
-    private EntityManager em;
-
-    @Override
-    public List<Post> searchWithFilters(PostSearchCriteria criteria) {
-        // CriteriaBuilder / JPQL / native SQL
-    }
-}
-
-// 3. Compose
-public interface PostRepository extends JpaRepository<Post, Long>, PostRepositoryCustom { }
-```
+For queries that don't fit in `@Query`: define a `PostRepositoryCustom` interface, implement it as `PostRepositoryCustomImpl` (Spring matches by name + `Impl`) with `@PersistenceContext EntityManager`, then `PostRepository extends JpaRepository<...>, PostRepositoryCustom`.
 
 ---
 
 ## Specification API (Dynamic Filters)
 
-```java
-public class PostSpecifications {
-
-    public static Specification<Post> hasStatus(String status) {
-        return (root, query, cb) ->
-            status == null ? cb.conjunction() : cb.equal(root.get("status"), status);
-    }
-
-    public static Specification<Post> createdAfter(Instant date) {
-        return (root, query, cb) ->
-            date == null ? cb.conjunction() : cb.greaterThanOrEqualTo(root.get("createdAt"), date);
-    }
-
-    public static Specification<Post> authorNameContains(String name) {
-        return (root, query, cb) -> {
-            if (name == null) return cb.conjunction();
-            Join<Post, Author> author = root.join("author", JoinType.LEFT);
-            return cb.like(cb.lower(author.get("name")), "%" + name.toLowerCase() + "%");
-        };
-    }
-}
-
-// Usage
-Page<Post> results = postRepository.findAll(
-    where(hasStatus("ACTIVE"))
-        .and(createdAfter(from))
-        .and(authorNameContains(nameFilter)),
-    PageRequest.of(0, 20)
-);
-```
+`Specification<Post>` is a `(root, query, cb) -> Predicate` lambda — compose with `where(specA).and(specB).or(specC)`. Pattern: each spec checks its input for null and returns `cb.conjunction()` (no-op) to make the filter optional. Use `root.join("author", JoinType.LEFT)` for predicates on associations.
 
 ---
 
 ## Auditing
 
-```java
-@Configuration
-@EnableJpaAuditing
-public class JpaConfig { }
-
-@MappedSuperclass
-@EntityListeners(AuditingEntityListener.class)
-public abstract class BaseEntity {
-
-    @CreatedDate
-    @Column(nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @LastModifiedDate
-    @Column(nullable = false)
-    private Instant updatedAt;
-
-    @CreatedBy
-    @Column(nullable = false, updatable = false, length = 100)
-    private String createdBy;
-
-    @LastModifiedBy
-    @Column(nullable = false, length = 100)
-    private String lastModifiedBy;
-}
-
-@Component
-public class AuditorAwareImpl implements AuditorAware<String> {
-    @Override
-    public Optional<String> getCurrentAuditor() {
-        return Optional.ofNullable(SecurityContextHolder.getContext())
-            .map(ctx -> ctx.getAuthentication())
-            .filter(Authentication::isAuthenticated)
-            .map(Authentication::getName);
-    }
-}
-```
+Add `@EnableJpaAuditing`, put `@CreatedDate`/`@LastModifiedDate`/`@CreatedBy`/`@LastModifiedBy` on a `@MappedSuperclass` `BaseEntity` annotated with `@EntityListeners(AuditingEntityListener.class)`. For `@CreatedBy`/`@LastModifiedBy`, implement an `AuditorAware<String>` bean (typically reading `SecurityContextHolder`).
 
 ---
 
@@ -443,39 +259,7 @@ Always return DTOs from controllers. This:
 
 ## Bidirectional Association Sync Helpers
 
-When using `@OneToMany(mappedBy = ...)`, the **child** owns the FK. Setting the parent on the child is what persists the relationship:
-
-```java
-@Entity
-public class Post {
-    @OneToMany(mappedBy = "post", cascade = ALL, orphanRemoval = true)
-    private List<Comment> comments = new ArrayList<>();
-
-    // ✅ Always pair add/remove — keeps in-memory state consistent with DB
-    public void addComment(Comment c) {
-        comments.add(c);
-        c.setPost(this);
-    }
-
-    public void removeComment(Comment c) {
-        comments.remove(c);
-        c.setPost(null);  // triggers orphanRemoval — DELETE FROM comment WHERE id=?
-    }
-}
-
-@Entity
-public class Comment {
-    @ManyToOne(fetch = LAZY)
-    @JoinColumn(name = "post_id", nullable = false)
-    private Post post;
-}
-```
-
-**Why both sides matter:**
-- Without `c.setPost(this)`: the FK is null on flush → constraint violation or orphan
-- Without `comments.add(c)`: in-memory state diverges; iterating `post.getComments()` won't see the new comment until reload
-
-For `equals`/`hashCode` in this scenario, see `references/entity-mapping-checklist.md` — child entities used in a parent's `Set` must have a stable hash.
+See `references/association-mappings.md` for the full pattern. Spring Data-specific reminder: a `Set<Comment>` field on the parent **requires** stable `equals`/`hashCode` on the child (see `references/entity-mapping-checklist.md`), or in-memory `add/remove` won't behave correctly across persistence state transitions.
 
 ---
 
