@@ -184,11 +184,9 @@ Check for:
 
 → See `references/entity-mapping-checklist.md` for full naming/DDL checklist.
 
-### B9 — Lombok / Records / Kotlin Data Classes
+### B9 — Lombok on Entities
 
-JPA requires three things modern Java/Kotlin abstractions break by default: **a no-arg constructor**, **mutable fields**, and **non-final classes** (for `LAZY` proxies). Flag every entity that violates these without an explicit fix.
-
-**Lombok red flags on `@Entity`:**
+JPA requires a no-arg constructor and mutable fields. Lombok's "include every field" defaults break both equals/hashCode semantics and the persistence contract.
 
 | Pattern | Verdict |
 |---|---|
@@ -200,7 +198,11 @@ JPA requires three things modern Java/Kotlin abstractions break by default: **a 
 | `@Value` | ❌ Final + immutable — no proxies, no hydration |
 | `@FieldNameConstants` | ✅ Type-safe `Sort`/Criteria/Specification — recommend it |
 
-**Java records:**
+→ See `references/lombok-jpa.md` for full code examples.
+
+### B10 — Java Records with JPA
+
+Records are `final`, have only `final` components, and have no synthesizable no-arg constructor. They cannot be entities, but they are excellent for several adjacent uses.
 
 | Use case | Verdict |
 |---|---|
@@ -212,7 +214,11 @@ JPA requires three things modern Java/Kotlin abstractions break by default: **a 
 | Spring Data **interface** projection | ❌ Records can't be proxied — use an `interface` |
 | Record component is `long`/`int` for nullable column | ❌ NPE on hydration — use boxed `Long`/`Integer` |
 
-**Kotlin data classes:**
+→ See `references/java-records-jpa.md` for full code examples.
+
+### B11 — Kotlin Data Classes with JPA
+
+Same `@Data`-style problem (auto equals/hashCode/toString on all properties) **plus** records' problem (final by default, no no-arg constructor). The `kotlin-jpa` plugin papers over the JPA contract but doesn't fix the semantic foot-guns.
 
 | Pattern | Verdict |
 |---|---|
@@ -225,7 +231,7 @@ JPA requires three things modern Java/Kotlin abstractions break by default: **a 
 | `data class` as DTO projection | ✅ Same as Java record |
 | `@JvmInline value class` field | ❌ Erased at JVM level — needs `AttributeConverter`, often breaks queries |
 
-→ See `references/lombok-records-kotlin.md` for the full set of non-obvious gotchas with before/after code.
+→ See `references/kotlin-data-classes-jpa.md` for full code examples.
 
 ---
 

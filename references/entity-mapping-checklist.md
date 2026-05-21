@@ -235,7 +235,10 @@ On PostgreSQL and MySQL (utf8mb4), `@Nationalized` is a no-op — all VARCHAR co
 
 ## 10. Lombok / Records / Kotlin Data Classes
 
-Quick summary — see `references/lombok-records-kotlin.md` for the full set of non-obvious gotchas.
+Quick summaries — see the dedicated references for each abstraction:
+- `references/lombok-jpa.md`
+- `references/java-records-jpa.md`
+- `references/kotlin-data-classes-jpa.md`
 
 ### Lombok on `@Entity`
 
@@ -319,4 +322,4 @@ class Post(
 }
 ```
 
-→ See `references/lombok-records-kotlin.md` for full code examples and the underlying reasons.
+→ See `references/lombok-jpa.md`, `references/java-records-jpa.md`, and `references/kotlin-data-classes-jpa.md` for full code examples and the underlying reasons.
