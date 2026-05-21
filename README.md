@@ -11,6 +11,7 @@ This skill brings Hypersistence Optimizer's philosophy to AI-assisted code revie
 | Area | Details |
 |---|---|
 | **Entity Mapping** | equals/hashCode correctness, @NaturalId, access strategies, @Immutable, @DynamicUpdate, column definitions, indexes, Lombok compatibility |
+| **Lombok / Records / Kotlin** | Non-obvious gotchas: @Data / @EqualsAndHashCode / @ToString / @Builder.Default on entities, records as @Entity vs @Embeddable vs @IdClass vs projection, Kotlin data classes with kotlin-jpa plugin, Long? for @Id, @JvmInline value class pitfalls |
 | **Identifier Strategies** | SEQUENCE > IDENTITY > TABLE > AUTO, pooled/pooled-lo optimizers, UUID strategies (random vs time-ordered), composite keys |
 | **Association Mappings** | @ManyToOne (LAZY always), @OneToMany with mappedBy, @ManyToMany with Set (bag vs set semantics), @OneToOne with @MapsId, bidirectional sync methods, cascade rules |
 | **N+1 Detection** | How N+1 occurs, JOIN FETCH, @EntityGraph, @BatchSize, @Fetch(SUBSELECT), MultipleBagFetchException, Hibernate statistics, datasource-proxy |
@@ -92,6 +93,7 @@ Deep-dive documentation with Java code examples (before/after patterns):
 ```
 references/
 ├── entity-mapping-checklist.md    # Full entity review rules
+├── lombok-records-kotlin.md       # Non-obvious gotchas: Lombok on entities, Java records, Kotlin data classes
 ├── identifier-strategies.md       # SEQUENCE, UUID, composite keys
 ├── association-mappings.md        # All 4 relationship types
 ├── fetching-and-n-plus-one.md     # N+1 detection and fixes

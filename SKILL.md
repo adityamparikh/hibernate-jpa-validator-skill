@@ -1,6 +1,6 @@
 ---
 name: hibernate-jpa-validator
-description: Reviews and writes Hibernate/JPA code for performance and correctness, inspired by Hypersistence Optimizer. Triggers on @Entity, @ManyToOne, @OneToMany, @ManyToMany, @OneToOne, GenerationType, EntityManager, Session, SessionFactory, CriteriaBuilder, Spring Data JPA repositories, JpaRepository, BaseJpaRepository, HikariCP, @BatchSize, @EntityGraph, JPQL, @Transactional, @Lock, OptimisticLockException, LazyConnectionDataSourceProxy, read-write routing, OSIV, Testcontainers, @DataJpaTest, datasource-proxy, query count assertions, Flyway, ddl-auto, identifier generation, association mappings, fetch plans, N+1 detection, batch processing, second-level caching, connection pooling, DTO projections, keyset pagination, JOIN FETCH with pagination, query optimization, inheritance strategies, Hibernate 6 features, or migration from Hibernate 5 to 6. Does NOT cover Jakarta Bean Validation (@Valid, @NotNull, @Size, ConstraintValidator, validation groups) — that is a separate concern handled elsewhere.
+description: Reviews and writes Hibernate/JPA code for performance and correctness, inspired by Hypersistence Optimizer. Triggers on @Entity, @ManyToOne, @OneToMany, @ManyToMany, @OneToOne, GenerationType, EntityManager, Session, SessionFactory, CriteriaBuilder, Spring Data JPA repositories, JpaRepository, BaseJpaRepository, HikariCP, @BatchSize, @EntityGraph, JPQL, @Transactional, @Lock, OptimisticLockException, LazyConnectionDataSourceProxy, read-write routing, OSIV, Testcontainers, @DataJpaTest, datasource-proxy, query count assertions, Flyway, ddl-auto, identifier generation, association mappings, fetch plans, N+1 detection, batch processing, second-level caching, connection pooling, DTO projections, keyset pagination, JOIN FETCH with pagination, query optimization, inheritance strategies, Hibernate 6 features, migration from Hibernate 5 to 6, Lombok on entities (@Data, @Builder, @EqualsAndHashCode, @ToString, @FieldNameConstants), Java records as entities/embeddables/projections/IdClass, and Kotlin data classes with the kotlin-jpa / kotlin-noarg / kotlin-allopen plugins. Does NOT cover Jakarta Bean Validation (@Valid, @NotNull, @Size, ConstraintValidator, validation groups) — that is a separate concern handled elsewhere.
 ---
 
 # Hibernate/JPA Validator
@@ -183,6 +183,49 @@ Check for:
 - Missing `@Index` on FK columns used in WHERE clauses
 
 → See `references/entity-mapping-checklist.md` for full naming/DDL checklist.
+
+### B9 — Lombok / Records / Kotlin Data Classes
+
+JPA requires three things modern Java/Kotlin abstractions break by default: **a no-arg constructor**, **mutable fields**, and **non-final classes** (for `LAZY` proxies). Flag every entity that violates these without an explicit fix.
+
+**Lombok red flags on `@Entity`:**
+
+| Pattern | Verdict |
+|---|---|
+| `@Data` | ❌ Bundles `@EqualsAndHashCode` + `@ToString` on all fields |
+| `@EqualsAndHashCode` (any form, including `onlyExplicitlyIncluded = true` with id) | ❌ Transient entities collide; use `@NaturalId` or stable hashCode |
+| `@ToString` without `exclude = {...}` | ❌ Silent N+1 in log statements; `LazyInitializationException` outside tx |
+| `@Builder` without `@NoArgsConstructor` | ❌ JPA fails to instantiate |
+| `@Builder` on field with initializer, missing `@Builder.Default` | ❌ Collection set to null, NPE on first `add()` |
+| `@Value` | ❌ Final + immutable — no proxies, no hydration |
+| `@FieldNameConstants` | ✅ Type-safe `Sort`/Criteria/Specification — recommend it |
+
+**Java records:**
+
+| Use case | Verdict |
+|---|---|
+| `@Entity` / `@MappedSuperclass` | ❌ Final, immutable, no no-arg ctor — fundamental blockers |
+| `@Embeddable` | ✅ Hibernate 6.2+ only |
+| `@IdClass` | ✅ Excellent — immutable + auto equals/hashCode |
+| `@EmbeddedId` | ✅ Hibernate 6.2+ only |
+| Spring Data **class** projection (`record PostSummary(...)`) | ✅ Canonical constructor used |
+| Spring Data **interface** projection | ❌ Records can't be proxied — use an `interface` |
+| Record component is `long`/`int` for nullable column | ❌ NPE on hydration — use boxed `Long`/`Integer` |
+
+**Kotlin data classes:**
+
+| Pattern | Verdict |
+|---|---|
+| `data class` as `@Entity` | ❌ Auto equals/hashCode/toString on all fields + `copy()` makes accidental detached entities |
+| Regular `class` as `@Entity` with `kotlin-jpa` plugin | ✅ Required setup |
+| `kotlin-noarg` only (no `kotlin-allopen`) | ❌ Class still final → `LAZY` proxies impossible |
+| `Long` (non-null) on `@Id` | ❌ Defaults to `0L`, breaks transient check — use `Long?` |
+| Non-null Kotlin type backing nullable column | ❌ NPE landmine — match nullability |
+| `data class` as `@Embeddable` (with `kotlin-jpa`) | ⚠️ OK — "update" by replacing the whole instance |
+| `data class` as DTO projection | ✅ Same as Java record |
+| `@JvmInline value class` field | ❌ Erased at JVM level — needs `AttributeConverter`, often breaks queries |
+
+→ See `references/lombok-records-kotlin.md` for the full set of non-obvious gotchas with before/after code.
 
 ---
 

@@ -233,15 +233,22 @@ On PostgreSQL and MySQL (utf8mb4), `@Nationalized` is a no-op — all VARCHAR co
 
 ---
 
-## 10. Lombok Compatibility
+## 10. Lombok / Records / Kotlin Data Classes
+
+Quick summary — see `references/lombok-records-kotlin.md` for the full set of non-obvious gotchas.
+
+### Lombok on `@Entity`
 
 | Annotation | Safe on Entity? | Notes |
 |---|---|---|
-| `@Getter` / `@Setter` | ✅ OK | Fine |
-| `@ToString` | ⚠️ Risky | Exclude lazy associations — triggers load |
-| `@EqualsAndHashCode` | ❌ Avoid | Use manual equals/hashCode |
-| `@Data` | ❌ Never | Combines EqualsAndHashCode on all fields |
-| `@Builder` | ⚠️ Needs no-arg | Add `@NoArgsConstructor` (JPA requires it) |
+| `@Getter` / `@Setter` | ✅ OK | Don't expose `@Id` setter publicly |
+| `@ToString` | ⚠️ Always `exclude` associations | Silent N+1 in logs, LazyInit outside tx |
+| `@EqualsAndHashCode` | ❌ Avoid | Even with `id` only — transient entities collide (id=null) |
+| `@Data` | ❌ Never | Bundles the two dangerous annotations above |
+| `@Value` | ❌ Never | Final + immutable — no Hibernate proxy, no hydration |
+| `@Builder` | ⚠️ Needs `@NoArgsConstructor` | And `@Builder.Default` on initialized collection fields |
+| `@SuperBuilder` | ⚠️ OK | Use for `@MappedSuperclass` hierarchies |
+| `@FieldNameConstants` | ✅ Recommended | Type-safe `Sort`/Criteria/Specification |
 
 ```java
 // ✅ Safe Lombok on entity
@@ -249,6 +256,67 @@ On PostgreSQL and MySQL (utf8mb4), `@Nationalized` is a no-op — all VARCHAR co
 @Getter
 @Setter
 @ToString(exclude = {"comments", "tags"})  // never toString lazy collections
-@NoArgsConstructor
-public class Post { ... }
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@Builder
+public class Post {
+    @OneToMany(mappedBy = "post")
+    @Builder.Default                          // ← without this, builder() sets to null
+    private List<Comment> comments = new ArrayList<>();
+}
 ```
+
+### Java Records
+
+Records are **final**, **immutable**, and lack a no-arg constructor — incompatible with `@Entity` / `@MappedSuperclass`. They shine elsewhere:
+
+| Use case | Verdict |
+|---|---|
+| `@Entity` / `@MappedSuperclass` | ❌ Never |
+| `@Embeddable` / `@EmbeddedId` | ✅ Hibernate 6.2+ only |
+| `@IdClass` composite key | ✅ Best-in-class — immutable, auto equals/hashCode |
+| Spring Data **class** projection | ✅ Canonical constructor invoked by Spring Data |
+| Spring Data **interface** projection | ❌ Use an `interface` — records can't be proxied |
+| JPQL `new com.example.PostDTO(...)` | ✅ FQN required |
+| Native `@SqlResultSetMapping` `@ConstructorResult` | ✅ Works |
+| Primitive component for nullable column | ❌ NPE on hydration — use boxed type |
+
+### Kotlin Data Classes
+
+Same problems as Lombok `@Data` (auto equals/hashCode/toString on all properties) plus records' problems (final by default, no no-arg constructor).
+
+| Pattern | Verdict |
+|---|---|
+| `data class` as `@Entity` | ❌ Never — `copy()` creates accidental detached entities |
+| Regular `class` as `@Entity` with `kotlin-jpa` plugin | ✅ Required combination |
+| `kotlin-noarg` alone (no `kotlin-allopen`) | ❌ Class still final → LAZY proxies impossible |
+| `Long` (non-null) on `@Id` | ❌ Use `Long?` — `0L` breaks transient check |
+| Non-null Kotlin type, nullable DB column | ❌ Bypasses Kotlin's null check via reflection |
+| `data class` as `@Embeddable` (with `kotlin-jpa`) | ⚠️ OK — "update" by replacing the whole instance |
+| `data class` as DTO projection | ✅ Same as Java record |
+| `@JvmInline value class` field | ❌ Erased at JVM level — needs `AttributeConverter` |
+| `by lazy` for collection | ❌ Not Hibernate lazy — never reflects DB state |
+
+```kotlin
+// ✅ Idiomatic Kotlin JPA entity
+@Entity
+class Post(
+    var title: String,
+) {
+    @Id @GeneratedValue
+    var id: Long? = null
+        private set
+
+    @OneToMany(mappedBy = "post")
+    val comments: MutableList<Comment> = mutableListOf()
+
+    override fun equals(other: Any?): Boolean {
+        if (other == null || Hibernate.getClass(this) != Hibernate.getClass(other)) return false
+        other as Post
+        return id != null && id == other.id
+    }
+
+    override fun hashCode(): Int = Hibernate.getClass(this).hashCode()
+}
+```
+
+→ See `references/lombok-records-kotlin.md` for full code examples and the underlying reasons.
