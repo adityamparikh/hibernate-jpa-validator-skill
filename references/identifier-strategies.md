@@ -97,7 +97,12 @@ Or use a custom generator for UUID v7 (RFC 9562 — monotonic within millisecond
 ```java
 @Id
 @Column(columnDefinition = "uuid", updatable = false, nullable = false)
-private UUID id = Generators.timeBasedEpochGenerator().generate();  // UUID v7 via java-uuid-generator
+// Hibernate 7+: native, no extra dependency
+@UuidGenerator(style = UuidGenerator.Style.VERSION_7)  // RFC 4122 v7 (incubating)
+private UUID id;
+
+// Hibernate 6 and earlier only: external generator
+// private UUID id = Generators.timeBasedEpochGenerator().generate();
 ```
 
 **When to use UUID over Long:**

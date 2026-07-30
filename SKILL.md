@@ -282,7 +282,7 @@ Flush + clear every `batch_size` iterations to prevent L1-cache OOM. **`IDENTITY
 
 HikariCP defaults are mostly fine. Non-obvious settings to set explicitly:
 
-- `maximum-pool-size` — start at `(cores * 2) + effective_spindle_count`, then measure
+- `maximum-pool-size` — the classic `(cores * 2) + effective_spindle_count` is an **HDD-era heuristic** with no reliable SSD/cloud equivalent; treat it as a starting point only and size empirically under load
 - `minimum-idle` = `maximum-pool-size` (HikariCP recommends a fixed pool over elastic sizing)
 - `max-lifetime` must be **less than** the DB's `wait_timeout` / load-balancer idle timeout
 - `leak-detection-threshold: 2000` — flag connections held > 2s (catches missed transactions)
@@ -363,6 +363,10 @@ class PostRepositoryTest {
 - Test data-changing migrations against a copy of production data
 
 Standard config: `spring.jpa.hibernate.ddl-auto=validate`, `spring.flyway.enabled=true`, `spring.flyway.validate-on-migrate=true`, `spring.flyway.out-of-order=false`.
+
+**Spring Boot 4+:** modular starters mean `flyway-core` on the classpath no longer
+triggers auto-configuration on its own. Add `spring-boot-starter-flyway` plus the
+DB-specific Flyway module (e.g. `flyway-database-postgresql`) explicitly.
 
 → See `references/spring-schema-migrations.md` for Flyway config, repeatable migrations, zero-downtime patterns, DDL validation, multi-tenant schemas.
 
