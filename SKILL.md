@@ -5,6 +5,14 @@ description: Reviews and writes Hibernate/JPA code for performance and correctne
 
 # Hibernate/JPA Validator
 
+## Currency
+
+**Last verified: 2026-07** (Hibernate ORM 7.4 / Spring Boot 4.1 era). Facts here age. If the answer hinges on a
+version-sensitive fact — a Hibernate or Spring Boot major, a pinned artifact coordinate, a default that names a release — and time has passed
+since the stamp above, spot-check current release notes or the tool's own source
+before asserting it. When current docs disagree with this file, **the docs win**:
+say so and note the line is stale.
+
 ## Overview
 
 Full-spectrum Hibernate/JPA analysis inspired by Vlad Mihalcea's Hypersistence Optimizer. When reviewing any entity or JPA code, **run the full checklist** — not just what the user asked about. Performance is first-class, not an afterthought.

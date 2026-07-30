@@ -6,7 +6,7 @@ Test the actual database, not a mock. Schemas, dialects, and SQL generation are 
 
 ## Testcontainers — Real Database in Tests
 
-Embedded H2/HSQLDB diverges from PostgreSQL/MySQL on constraints, JSON types, sequence behavior, and dialect. **Use Testcontainers.** Dependencies: `org.testcontainers:postgresql` + `org.testcontainers:junit-jupiter` (test scope).
+Embedded H2/HSQLDB diverges from PostgreSQL/MySQL on constraints, JSON types, sequence behavior, and dialect. **Use Testcontainers.** Dependencies (Testcontainers 2.x): `org.testcontainers:testcontainers-postgresql` + `org.testcontainers:testcontainers-junit-jupiter` (test scope). **Testcontainers 2.0 renamed every module artifact with a `testcontainers-` prefix** and relocated container classes into module-specific packages; the unprefixed 1.x artifacts stopped releasing in Dec 2025.
 
 ### Spring Boot 3.1+: @ServiceConnection
 
