@@ -1,6 +1,6 @@
 # Connection Pooling
 
-HikariCP is the default and best pool for Spring Boot. These settings apply to Spring Boot 3.x + HikariCP 5.x.
+HikariCP is the default and best pool for Spring Boot, on both Boot 3.x and 4.x. Note Hibernate 7 dropped support for Vibur, Proxool and UCP; HikariCP is unaffected.
 
 ---
 

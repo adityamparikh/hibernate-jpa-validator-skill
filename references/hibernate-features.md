@@ -1,6 +1,6 @@
 # Hibernate-Specific Features
 
-Hibernate 6.x / Spring Boot 3.x features beyond standard JPA.
+Hibernate features beyond standard JPA. Version markers below are the release that introduced each feature; all are present in Hibernate 7 too. Note that in Hibernate 7 `@SQLRestriction` is no longer merely preferred over `@Where` — `@Where` was removed. See `migration-6-to-7.md`.
 
 ---
 

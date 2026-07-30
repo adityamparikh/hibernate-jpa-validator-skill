@@ -1,6 +1,6 @@
 ---
 name: hibernate-jpa-validator
-description: Reviews and writes Hibernate/JPA code for performance and correctness, inspired by Hypersistence Optimizer. Triggers on @Entity, @ManyToOne, @OneToMany, @ManyToMany, @OneToOne, GenerationType, EntityManager, Session, SessionFactory, CriteriaBuilder, Spring Data JPA repositories, JpaRepository, BaseJpaRepository, HikariCP, @BatchSize, @EntityGraph, JPQL, @Transactional, @Lock, OptimisticLockException, LazyConnectionDataSourceProxy, read-write routing, OSIV, Testcontainers, @DataJpaTest, datasource-proxy, query count assertions, Flyway, ddl-auto, identifier generation, association mappings, fetch plans, N+1 detection, batch processing, second-level caching, connection pooling, DTO projections, keyset pagination, JOIN FETCH with pagination, query optimization, inheritance strategies, Hibernate 6 features, or migration from Hibernate 5 to 6. Does NOT cover Jakarta Bean Validation (@Valid, @NotNull, @Size, ConstraintValidator, validation groups) — that is a separate concern handled elsewhere.
+description: Reviews and writes Hibernate/JPA code for performance and correctness, inspired by Hypersistence Optimizer. Triggers on @Entity, @ManyToOne, @OneToMany, @ManyToMany, @OneToOne, GenerationType, EntityManager, Session, SessionFactory, CriteriaBuilder, Spring Data JPA repositories, JpaRepository, BaseJpaRepository, HikariCP, @BatchSize, @EntityGraph, JPQL, @Transactional, @Lock, OptimisticLockException, LazyConnectionDataSourceProxy, read-write routing, OSIV, Testcontainers, @DataJpaTest, datasource-proxy, query count assertions, Flyway, ddl-auto, identifier generation, association mappings, fetch plans, N+1 detection, batch processing, second-level caching, connection pooling, DTO projections, keyset pagination, JOIN FETCH with pagination, query optimization, inheritance strategies, Hibernate 6 features, migration from Hibernate 5 to 6, or migration from Hibernate 6 to 7 (Hibernate 7, Jakarta Persistence 3.2, Spring Boot 4, Testcontainers 2, StatelessSession cache and batch changes, @Where to @SQLRestriction, Session.save/update/delete removal). Does NOT cover Jakarta Bean Validation (@Valid, @NotNull, @Size, ConstraintValidator, validation groups) — that is a separate concern handled elsewhere.
 ---
 
 # Hibernate/JPA Validator
@@ -371,6 +371,24 @@ DB-specific Flyway module (e.g. `flyway-database-postgresql`) explicitly.
 → See `references/spring-schema-migrations.md` for Flyway config, repeatable migrations, zero-downtime patterns, DDL validation, multi-tenant schemas.
 
 ---
+
+## L: Version-Specific Topics
+
+None of these fire on every review — open them when the request names the topic.
+
+| When the request involves… | Open |
+|---|---|
+| Upgrading Hibernate 6 → 7 (Spring Boot 3 → 4) | `references/migration-6-to-7.md` |
+| Upgrading Hibernate 5 → 6 (Spring Boot 2 → 3) | `references/migration-5-to-6.md` |
+| `@SQLRestriction`, `@SoftDelete`, `@TenantId`, JSON columns, other Hibernate-only features | `references/hibernate-features.md` |
+| `@Inheritance`, `SINGLE_TABLE` vs `JOINED` vs `TABLE_PER_CLASS`, `@DiscriminatorColumn` | `references/inheritance-strategies.md` |
+| Turning on SQL/bind-parameter logging, statistics, slow-query thresholds | `references/logging-and-monitoring.md` |
+
+**Which Hibernate is in play?** Spring Boot 3.x manages Hibernate 6; Spring Boot 4.x
+manages Hibernate 7. Check the project's Boot version before asserting version-specific
+behaviour — several Hibernate 7 changes are silent (native-query temporal types,
+`StatelessSession` caching and batching), so code that compiles may still behave
+differently. See `references/migration-6-to-7.md`.
 
 ## Always Do
 
