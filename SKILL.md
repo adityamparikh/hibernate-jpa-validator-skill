@@ -1,6 +1,6 @@
 ---
 name: hibernate-jpa-validator
-description: Reviews and writes Hibernate/JPA code for performance and correctness, inspired by Hypersistence Optimizer. Triggers on @Entity, @ManyToOne, @OneToMany, @ManyToMany, @OneToOne, GenerationType, EntityManager, Session, SessionFactory, CriteriaBuilder, Spring Data JPA repositories, JpaRepository, BaseJpaRepository, HikariCP, @BatchSize, @EntityGraph, JPQL, @Transactional, @Lock, OptimisticLockException, LazyConnectionDataSourceProxy, read-write routing, OSIV, Testcontainers, @DataJpaTest, datasource-proxy, query count assertions, Flyway, ddl-auto, identifier generation, association mappings, fetch plans, N+1 detection, batch processing, second-level caching, connection pooling, DTO projections, keyset pagination, JOIN FETCH with pagination, query optimization, inheritance strategies, Hibernate 6 features, migration from Hibernate 5 to 6, or migration from Hibernate 6 to 7 (Hibernate 7, Jakarta Persistence 3.2, Spring Boot 4, Testcontainers 2, StatelessSession cache and batch changes, @Where to @SQLRestriction, Session.save/update/delete removal). Does NOT cover Jakarta Bean Validation (@Valid, @NotNull, @Size, ConstraintValidator, validation groups) — that is a separate concern handled elsewhere.
+description: Reviews and writes Hibernate/JPA code for performance and correctness, inspired by Hypersistence Optimizer. Triggers on @Entity, @ManyToOne, @OneToMany, @ManyToMany, @OneToOne, GenerationType, EntityManager, Session, SessionFactory, CriteriaBuilder, Spring Data JPA repositories, JpaRepository, BaseJpaRepository, HikariCP, @BatchSize, @EntityGraph, JPQL, @Transactional, @Lock, OptimisticLockException, LazyConnectionDataSourceProxy, read-write routing, OSIV, Testcontainers, @DataJpaTest, datasource-proxy, query count assertions, Flyway, ddl-auto, identifier generation, association mappings, fetch plans, N+1 detection, batch processing, second-level caching, connection pooling, DTO projections, keyset pagination, JOIN FETCH with pagination, query optimization, inheritance strategies, Hibernate 6 features, migration from Hibernate 5 to 6, migration from Hibernate 6 to 7 (Hibernate 7, Jakarta Persistence 3.2, Spring Boot 4, Testcontainers 2, StatelessSession cache and batch changes, @Where to @SQLRestriction, Session.save/update/delete removal), Lombok on entities (@Data, @Builder, @EqualsAndHashCode, @ToString, @FieldNameConstants), Java records as entities/embeddables/projections/IdClass, and Kotlin data classes with the kotlin-jpa / kotlin-noarg / kotlin-allopen plugins. Does NOT cover Jakarta Bean Validation (@Valid, @NotNull, @Size, ConstraintValidator, validation groups) — that is a separate concern handled elsewhere.
 ---
 
 # Hibernate/JPA Validator
@@ -191,6 +191,55 @@ Check for:
 - Missing `@Index` on FK columns used in WHERE clauses
 
 → See `references/entity-mapping-checklist.md` for full naming/DDL checklist.
+
+### B9 — Lombok on Entities
+
+JPA requires a no-arg constructor and mutable fields. Lombok's "include every field" defaults break both equals/hashCode semantics and the persistence contract.
+
+| Pattern | Verdict |
+|---|---|
+| `@Data` | ❌ Bundles `@EqualsAndHashCode` + `@ToString` on all fields |
+| `@EqualsAndHashCode` (any form, including `onlyExplicitlyIncluded = true` with id) | ❌ Transient entities collide; use `@NaturalId` or stable hashCode |
+| `@ToString` without `exclude = {...}` | ❌ Silent N+1 in log statements; `LazyInitializationException` outside tx |
+| `@Builder` without `@NoArgsConstructor` | ❌ JPA fails to instantiate |
+| `@Builder` on field with initializer, missing `@Builder.Default` | ❌ Collection set to null, NPE on first `add()` |
+| `@Value` | ❌ Final + immutable — no proxies, no hydration |
+| `@FieldNameConstants` | ✅ Type-safe `Sort`/Criteria/Specification — recommend it |
+
+→ See `references/lombok-jpa.md` for full code examples.
+
+### B10 — Java Records with JPA
+
+Records are `final`, have only `final` components, and have no synthesizable no-arg constructor. They cannot be entities, but they are excellent for several adjacent uses.
+
+| Use case | Verdict |
+|---|---|
+| `@Entity` / `@MappedSuperclass` | ❌ Final, immutable, no no-arg ctor — fundamental blockers |
+| `@Embeddable` | ✅ Hibernate 6.2+ only |
+| `@IdClass` | ✅ Excellent — immutable + auto equals/hashCode |
+| `@EmbeddedId` | ✅ Hibernate 6.2+ only |
+| Spring Data **class** projection (`record PostSummary(...)`) | ✅ Canonical constructor used |
+| Spring Data **interface** projection | ❌ Records can't be proxied — use an `interface` |
+| Record component is `long`/`int` for nullable column | ❌ NPE on hydration — use boxed `Long`/`Integer` |
+
+→ See `references/java-records-jpa.md` for full code examples.
+
+### B11 — Kotlin Data Classes with JPA
+
+Same `@Data`-style problem (auto equals/hashCode/toString on all properties) **plus** records' problem (final by default, no no-arg constructor). `kotlin-jpa` only fixes the constructor half of that — it wraps `kotlin-noarg`, not `kotlin-allopen` — so entities also need `kotlin-allopen` configured for `@Entity`/`@MappedSuperclass` to become non-final.
+
+| Pattern | Verdict |
+|---|---|
+| `data class` as `@Entity` | ❌ Auto equals/hashCode/toString on all fields + `copy()` makes accidental detached entities |
+| Regular `class` as `@Entity` with `kotlin-jpa` **and** `kotlin-allopen` (configured for JPA annotations) | ✅ Required setup |
+| `kotlin-jpa` alone (no `kotlin-allopen`) | ❌ No-arg only — class still final → `LAZY` proxies impossible |
+| `Long` (non-null) on `@Id` | ❌ Defaults to `0L`, breaks transient check — use `Long?` |
+| Non-null Kotlin type backing nullable column | ❌ NPE landmine — match nullability |
+| `data class` as `@Embeddable` (with `kotlin-jpa`) | ⚠️ OK — no `allopen` needed, embeddables aren't proxied; "update" by replacing the whole instance |
+| `data class` as DTO projection | ✅ Same as Java record |
+| `@JvmInline value class` field | ❌ Erased at JVM level — needs `AttributeConverter`, often breaks queries |
+
+→ See `references/kotlin-data-classes-jpa.md` for full code examples.
 
 ---
 
