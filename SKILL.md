@@ -7,7 +7,7 @@ description: Reviews and writes Hibernate/JPA code for performance and correctne
 
 ## Currency
 
-**Last verified: 2026-07** (Hibernate ORM 7.4 / Spring Boot 4.1 era). Facts here age. If the answer hinges on a
+**Last verified: 2026-07** (Hibernate ORM 7.x / Spring Boot 4.1 era; the 6->7 notes are checked against the official 7.0 migration guide). Facts here age. If the answer hinges on a
 version-sensitive fact — a Hibernate or Spring Boot major, a pinned artifact coordinate, a default that names a release — and time has passed
 since the stamp above, spot-check current release notes or the tool's own source
 before asserting it. When current docs disagree with this file, **the docs win**:
@@ -364,9 +364,10 @@ class PostRepositoryTest {
 
 Standard config: `spring.jpa.hibernate.ddl-auto=validate`, `spring.flyway.enabled=true`, `spring.flyway.validate-on-migrate=true`, `spring.flyway.out-of-order=false`.
 
-**Spring Boot 4+:** modular starters mean `flyway-core` on the classpath no longer
-triggers auto-configuration on its own. Add `spring-boot-starter-flyway` plus the
-DB-specific Flyway module (e.g. `flyway-database-postgresql`) explicitly.
+**Flyway needs a starter plus a DB module.** Per the Spring Boot docs, add
+`spring-boot-starter-flyway` (which covers in-memory and file-based databases), and for
+anything else the database-specific module too — `org.flywaydb:flyway-database-postgresql`
+for PostgreSQL, `org.flywaydb:flyway-mysql` for MySQL. `flyway-core` alone is not enough.
 
 → See `references/spring-schema-migrations.md` for Flyway config, repeatable migrations, zero-downtime patterns, DDL validation, multi-tenant schemas.
 
