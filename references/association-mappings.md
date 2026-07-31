@@ -1,6 +1,6 @@
 # Association Mappings
 
-The four association types, their traps, and correct patterns. Target: Hibernate 6 / JPA 3.
+The four association types, their traps, and correct patterns. Applies to Hibernate 6 (JPA 3.1) and Hibernate 7 (Jakarta Persistence 3.2) alike unless a line says otherwise.
 
 ---
 
