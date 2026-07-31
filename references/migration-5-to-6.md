@@ -1,6 +1,6 @@
 # Hibernate 5 → 6 Migration Guide
 
-Hibernate 6 shipped with Spring Boot 3.0 (aligned with Spring Framework 6). Key breaking changes below.
+Hibernate 6 shipped with Spring Boot 3.0 (aligned with Spring Framework 6). Key breaking changes below. **For Hibernate 6 → 7 (Spring Boot 4), see `migration-6-to-7.md`.**
 
 ---
 

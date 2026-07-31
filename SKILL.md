@@ -1,9 +1,17 @@
 ---
 name: hibernate-jpa-validator
-description: Reviews and writes Hibernate/JPA code for performance and correctness, inspired by Hypersistence Optimizer. Triggers on @Entity, @ManyToOne, @OneToMany, @ManyToMany, @OneToOne, GenerationType, EntityManager, Session, SessionFactory, CriteriaBuilder, Spring Data JPA repositories, JpaRepository, BaseJpaRepository, HikariCP, @BatchSize, @EntityGraph, JPQL, @Transactional, @Lock, OptimisticLockException, LazyConnectionDataSourceProxy, read-write routing, OSIV, Testcontainers, @DataJpaTest, datasource-proxy, query count assertions, Flyway, ddl-auto, identifier generation, association mappings, fetch plans, N+1 detection, batch processing, second-level caching, connection pooling, DTO projections, keyset pagination, JOIN FETCH with pagination, query optimization, inheritance strategies, Hibernate 6 features, migration from Hibernate 5 to 6, Lombok on entities (@Data, @Builder, @EqualsAndHashCode, @ToString, @FieldNameConstants), Java records as entities/embeddables/projections/IdClass, and Kotlin data classes with the kotlin-jpa / kotlin-noarg / kotlin-allopen plugins. Does NOT cover Jakarta Bean Validation (@Valid, @NotNull, @Size, ConstraintValidator, validation groups) — that is a separate concern handled elsewhere.
+description: Reviews and writes Hibernate/JPA code for performance and correctness, inspired by Hypersistence Optimizer. Triggers on @Entity, @ManyToOne, @OneToMany, @ManyToMany, @OneToOne, GenerationType, EntityManager, Session, SessionFactory, CriteriaBuilder, Spring Data JPA repositories, JpaRepository, BaseJpaRepository, HikariCP, @BatchSize, @EntityGraph, JPQL, @Transactional, @Lock, OptimisticLockException, LazyConnectionDataSourceProxy, read-write routing, OSIV, Testcontainers, @DataJpaTest, datasource-proxy, query count assertions, Flyway, ddl-auto, identifier generation, association mappings, fetch plans, N+1 detection, batch processing, second-level caching, connection pooling, DTO projections, keyset pagination, JOIN FETCH with pagination, query optimization, inheritance strategies, Hibernate 6 features, migration from Hibernate 5 to 6, migration from Hibernate 6 to 7 (Hibernate 7, Jakarta Persistence 3.2, Spring Boot 4, Testcontainers 2, StatelessSession cache and batch changes, @Where to @SQLRestriction, Session.save/update/delete removal), Lombok on entities (@Data, @Builder, @EqualsAndHashCode, @ToString, @FieldNameConstants), Java records as entities/embeddables/projections/IdClass, and Kotlin data classes with the kotlin-jpa / kotlin-noarg / kotlin-allopen plugins. Does NOT cover Jakarta Bean Validation (@Valid, @NotNull, @Size, ConstraintValidator, validation groups) — that is a separate concern handled elsewhere.
 ---
 
 # Hibernate/JPA Validator
+
+## Currency
+
+**Last verified: 2026-07** (Hibernate ORM 7.x / Spring Boot 4.1 era; the 6->7 notes are checked against the official 7.0 migration guide). Facts here age. If the answer hinges on a
+version-sensitive fact — a Hibernate or Spring Boot major, a pinned artifact coordinate, a default that names a release — and time has passed
+since the stamp above, spot-check current release notes or the tool's own source
+before asserting it. When current docs disagree with this file, **the docs win**:
+say so and note the line is stale.
 
 ## Overview
 
@@ -323,7 +331,7 @@ Flush + clear every `batch_size` iterations to prevent L1-cache OOM. **`IDENTITY
 
 HikariCP defaults are mostly fine. Non-obvious settings to set explicitly:
 
-- `maximum-pool-size` — start at `(cores * 2) + effective_spindle_count`, then measure
+- `maximum-pool-size` — the classic `(cores * 2) + effective_spindle_count` is an **HDD-era heuristic** with no reliable SSD/cloud equivalent; treat it as a starting point only and size empirically under load
 - `minimum-idle` = `maximum-pool-size` (HikariCP recommends a fixed pool over elastic sizing)
 - `max-lifetime` must be **less than** the DB's `wait_timeout` / load-balancer idle timeout
 - `leak-detection-threshold: 2000` — flag connections held > 2s (catches missed transactions)
@@ -405,9 +413,32 @@ class PostRepositoryTest {
 
 Standard config: `spring.jpa.hibernate.ddl-auto=validate`, `spring.flyway.enabled=true`, `spring.flyway.validate-on-migrate=true`, `spring.flyway.out-of-order=false`.
 
+**Flyway needs a starter plus a DB module.** Per the Spring Boot docs, add
+`spring-boot-starter-flyway` (which covers in-memory and file-based databases), and for
+anything else the database-specific module too — `org.flywaydb:flyway-database-postgresql`
+for PostgreSQL, `org.flywaydb:flyway-mysql` for MySQL. `flyway-core` alone is not enough.
+
 → See `references/spring-schema-migrations.md` for Flyway config, repeatable migrations, zero-downtime patterns, DDL validation, multi-tenant schemas.
 
 ---
+
+## L: Version-Specific Topics
+
+None of these fire on every review — open them when the request names the topic.
+
+| When the request involves… | Open |
+|---|---|
+| Upgrading Hibernate 6 → 7 (Spring Boot 3 → 4) | `references/migration-6-to-7.md` |
+| Upgrading Hibernate 5 → 6 (Spring Boot 2 → 3) | `references/migration-5-to-6.md` |
+| `@SQLRestriction`, `@SoftDelete`, `@TenantId`, JSON columns, other Hibernate-only features | `references/hibernate-features.md` |
+| `@Inheritance`, `SINGLE_TABLE` vs `JOINED` vs `TABLE_PER_CLASS`, `@DiscriminatorColumn` | `references/inheritance-strategies.md` |
+| Turning on SQL/bind-parameter logging, statistics, slow-query thresholds | `references/logging-and-monitoring.md` |
+
+**Which Hibernate is in play?** Spring Boot 3.x manages Hibernate 6; Spring Boot 4.x
+manages Hibernate 7. Check the project's Boot version before asserting version-specific
+behaviour — several Hibernate 7 changes are silent (native-query temporal types,
+`StatelessSession` caching and batching), so code that compiles may still behave
+differently. See `references/migration-6-to-7.md`.
 
 ## Always Do
 
