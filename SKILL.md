@@ -238,6 +238,8 @@ Same `@Data`-style problem (auto equals/hashCode/toString on all properties) **p
 | `data class` as `@Embeddable` (with `kotlin-jpa`) | ⚠️ OK — no `allopen` needed, embeddables aren't proxied; "update" by replacing the whole instance |
 | `data class` as DTO projection | ✅ Same as Java record |
 | `@JvmInline value class` field | ❌ Erased at JVM level — needs `AttributeConverter`, often breaks queries |
+| `@Access(AccessType.PROPERTY)` on a `val` property | ❌ No generated setter — Hibernate can't write it; must be `var` |
+| Annotation on a property, no `@Access` override | ✅ Default field access — getters/setters bypassed, usually fine |
 
 → See `references/kotlin-data-classes-jpa.md` for full code examples.
 

@@ -108,6 +108,8 @@ A non-null `Long` defaults to `0L`, meaning a "new" entity has id `0L` instead o
 var id: Long? = null
 ```
 
+Why it often "works" anyway, and why that's not a reason to keep it: Hibernate treats a primary-key value of `0` differently per method. `persist()` expects an unassigned id and throws if one looks already set; `merge()` treats `0` as "not yet assigned," generates a new key, and inserts a fresh row. Spring Data's `save()` picks `merge()` whenever it thinks the entity isn't new (its `isNew()` check is `id == null`), so a primitive `Long` id often still produces a correct insert — but at the cost of an extra `SELECT` per save (merge loads-then-merges), and it will silently *update* an existing row if one genuinely has id `0`. Prefer `Long?` and let `persist()` insert directly.
+
 ---
 
 ## 6. `val` properties: Hibernate can still set them, but you can't
@@ -116,7 +118,26 @@ Hibernate uses reflection to set fields directly, so `val` "works" — it's hydr
 
 ---
 
-## 7. `lateinit var` is useful for non-null fields populated by Hibernate
+## 7. Annotations on properties use field access by default
+
+Most Kotlin JPA code puts annotations directly on primary-constructor properties (`@Id val id: Long? = null`). Hibernate treats this as **field access** by default: it reads and writes the backing field via reflection and never calls your getter/setter, even if you wrote one. That's the common case and it's fine — the gotcha shows up only if you deliberately opt into property access:
+
+```kotlin
+@Entity
+@Access(AccessType.PROPERTY)   // Hibernate now calls accessors instead of touching fields
+class Post {
+    @Id @GeneratedValue
+    var id: Long? = null       // must be `var` — a `val` has no generated setter
+}
+```
+
+Under `AccessType.PROPERTY`, every annotated property must be `var`. Kotlin never emits a setter for `val`, so Hibernate has no method to call — decompile the class and `setId` simply isn't there.
+
+**Kotlin 2.2 also changed what an annotation on a property targets.** Before 2.2, `@Column val name: String` in a primary constructor applied the annotation to the constructor **parameter only** — not the backing field or the generated getter — which could cause JPA or bean-validation annotations to be silently ignored depending on framework internals. Kotlin 2.2 added a compiler option (IntelliJ IDEA offers to enable it) that applies such annotations to the parameter *and* the property/field by default. On an older Kotlin version, if an annotation seems to have no effect, check whether an explicit `@field:`/`@get:` use-site target is needed.
+
+---
+
+## 8. `lateinit var` is useful for non-null fields populated by Hibernate
 
 For non-null fields that aren't set in the primary constructor (e.g. computed in `@PostLoad` or set during a multi-step builder), `lateinit var` avoids the awkward `var foo: String = ""` placeholder:
 
@@ -135,7 +156,7 @@ class Post {
 
 ---
 
-## 8. `@JvmInline value class` doesn't map cleanly
+## 9. `@JvmInline value class` doesn't map cleanly
 
 Value classes are erased to their underlying type at the JVM level (`Email(val value: String)` becomes `String` in bytecode). Hibernate sees the underlying type and won't invoke the wrapper. You need an `AttributeConverter`:
 
@@ -154,13 +175,13 @@ Even with this, generic types (`List<Email>`) and using value classes in queries
 
 ---
 
-## 9. Property delegation (`by lazy`) is not Hibernate lazy
+## 10. Property delegation (`by lazy`) is not Hibernate lazy
 
 `by lazy { ... }` is a Kotlin computed-once delegate; Hibernate lazy loading is a proxy-based mechanism. They are unrelated. Don't use `by lazy` for `@OneToMany` collections — it captures the initial empty value and never reflects later DB state.
 
 ---
 
-## 10. `data class` is fine for DTO projections
+## 11. `data class` is fine for DTO projections
 
 The problems above are specific to *entities*. Data classes are excellent for Spring Data class projections (same as Java records):
 
@@ -176,7 +197,7 @@ Same caveat as records: interface projections need an `interface`, not a `data c
 
 ---
 
-## 11. `@Embeddable` data class needs `kotlin-jpa`
+## 12. `@Embeddable` data class needs `kotlin-jpa`
 
 Embeddables need a no-arg constructor, which `kotlin-jpa` configures. Unlike entities, embeddables aren't proxied by Hibernate (they're loaded inline with the owning entity's row), so they don't need `kotlin-allopen`/non-finality:
 
@@ -192,7 +213,7 @@ To "update" an embedded value: replace the whole object on the parent. Same shap
 
 ---
 
-## 12. Sealed classes for inheritance — apply `kotlin-allopen`
+## 13. Sealed classes for inheritance — apply `kotlin-allopen`
 
 Sealed hierarchies are popular for domain modeling. To map them as JPA inheritance (`SINGLE_TABLE` / `JOINED`), the sealed parent and its subtypes need `kotlin-allopen` configured for `@Entity`/`@MappedSuperclass` — `kotlin-jpa` alone (no-arg only) does not open them; see §1.
 
@@ -210,7 +231,7 @@ Often it's cleaner to map the data layer with regular classes and convert to a s
 
 ---
 
-## 13. Summary table
+## 14. Summary table
 
 | Pattern | Verdict | Notes |
 |---|---|---|
@@ -221,7 +242,9 @@ Often it's cleaner to map the data layer with regular classes and convert to a s
 | `val` on `@Id` | ✅ OK | Hibernate hydrates via reflection |
 | `val` on mutable column | ❌ Avoid | App code can't update; dirty checking unusable |
 | `var` on mutable column | ✅ Always | Standard |
-| `Long` (non-null) on `@Id` | ❌ Never | Use `Long?` so transient state is `null`, not `0L` |
+| `Long` (non-null) on `@Id` | ❌ Never | Use `Long?`; `merge()` papers over `0` with an extra SELECT, `persist()` throws |
+| Property-annotated field, no `@Access` | ✅ Default | Field access — getters/setters bypassed, which is usually fine |
+| `@Access(AccessType.PROPERTY)` on a `val` | ❌ Never | No generated setter — Hibernate can't write the property |
 | `lateinit var` on non-null field | ✅ OK | Better diagnostics than `""` placeholder |
 | `@JvmInline value class` field | ❌ Avoid | Erased at JVM level; needs converter, often breaks queries |
 | `by lazy` for collection field | ❌ Never | Not Hibernate lazy; never refreshes |

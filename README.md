@@ -13,7 +13,7 @@ This skill brings Hypersistence Optimizer's philosophy to AI-assisted code revie
 | **Entity Mapping** | equals/hashCode correctness, @NaturalId, access strategies, @Immutable, @DynamicUpdate, column definitions, indexes |
 | **Lombok on Entities** | @Data / @EqualsAndHashCode / @ToString / @Builder.Default / @SuperBuilder / @FieldNameConstants gotchas |
 | **Java Records** | Records as @Entity (no) vs @Embeddable / @IdClass / @EmbeddedId vs Spring Data class projection vs JPQL constructor result |
-| **Kotlin Data Classes** | kotlin-jpa plugin, Long? for @Id, data class copy() footgun, @JvmInline value class pitfalls, val vs var, by lazy vs Hibernate lazy |
+| **Kotlin Data Classes** | kotlin-jpa + kotlin-allopen plugins, field vs property access, Long? for @Id, data class copy() footgun, @JvmInline value class pitfalls, val vs var, by lazy vs Hibernate lazy |
 | **Identifier Strategies** | SEQUENCE > IDENTITY > TABLE > AUTO, pooled/pooled-lo optimizers, UUID strategies (random vs time-ordered), composite keys |
 | **Association Mappings** | @ManyToOne (LAZY always), @OneToMany with mappedBy, @ManyToMany with Set (bag vs set semantics), @OneToOne with @MapsId, bidirectional sync methods, cascade rules |
 | **N+1 Detection** | How N+1 occurs, JOIN FETCH, @EntityGraph, @BatchSize, @Fetch(SUBSELECT), MultipleBagFetchException, Hibernate statistics, datasource-proxy |

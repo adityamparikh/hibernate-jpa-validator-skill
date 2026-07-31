@@ -298,6 +298,8 @@ Same problems as Lombok `@Data` (auto equals/hashCode/toString on all properties
 | `data class` as DTO projection | ✅ Same as Java record |
 | `@JvmInline value class` field | ❌ Erased at JVM level — needs `AttributeConverter` |
 | `by lazy` for collection | ❌ Not Hibernate lazy — never reflects DB state |
+| `@Access(AccessType.PROPERTY)` on a `val` property | ❌ Never — no generated setter, must be `var` |
+| Annotation on a property, default access | ✅ OK — field access is the default; getters/setters bypassed |
 
 ```kotlin
 // ✅ Idiomatic Kotlin JPA entity
