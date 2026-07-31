@@ -4,19 +4,26 @@ Kotlin data classes share Lombok `@Data`'s problem (auto equals/hashCode/toStrin
 
 ---
 
-## 1. Use `kotlin-jpa`, not just `kotlin-noarg`
+## 1. `kotlin-jpa` alone is not enough — you also need `kotlin-allopen`
 
-`kotlin-noarg` synthesizes a no-arg constructor for annotated classes. `kotlin-allopen` removes `final` from annotated classes so Hibernate can subclass them. `kotlin-jpa` is the meta-plugin that configures both for the standard JPA annotations (`@Entity`, `@MappedSuperclass`, `@Embeddable`):
+`kotlin-noarg` synthesizes a no-arg constructor for annotated classes. `kotlin-allopen` removes `final` from annotated classes so Hibernate can subclass them. `kotlin-jpa` is a **no-arg-only** wrapper: it auto-configures `@Entity`, `@MappedSuperclass`, and `@Embeddable` for constructor generation, but it does **not** touch finality. `kotlin-spring` is the equivalent all-open wrapper, but it's scoped to Spring annotations (`@Component`, `@Configuration`, `@Transactional`, ...) — it does not open `@Entity` by default either. All-open for JPA has to be configured explicitly:
 
 ```kotlin
 // build.gradle.kts
 plugins {
-    kotlin("plugin.jpa") version "1.9.0"  // ← noarg + allopen tuned for JPA
-    kotlin("plugin.spring") version "1.9.0"
+    kotlin("plugin.jpa") version "2.0.20"     // no-arg ctor for @Entity/@MappedSuperclass/@Embeddable
+    kotlin("plugin.allopen") version "2.0.20" // makes those same classes non-final
+    kotlin("plugin.spring") version "2.0.20"  // separate: opens Spring-managed beans, not entities
+}
+
+allOpen {
+    annotation("jakarta.persistence.Entity")
+    annotation("jakarta.persistence.MappedSuperclass")
+    annotation("jakarta.persistence.Embeddable")
 }
 ```
 
-Without `kotlin-jpa`: `InstantiationException` on startup (no no-arg ctor) and `LazyInitializationException` on every `@ManyToOne(fetch = LAZY)` (final class, no proxy).
+Without `kotlin-jpa`: `InstantiationException` on startup (no no-arg ctor). With `kotlin-jpa` but without the `allOpen` block above: no ctor error, but every `@ManyToOne(fetch = LAZY)` throws `LazyInitializationException` or silently fetches eagerly, because the entity class is still `final` and Hibernate's default proxy-based lazy loading can't subclass it.
 
 ---
 
@@ -171,7 +178,7 @@ Same caveat as records: interface projections need an `interface`, not a `data c
 
 ## 11. `@Embeddable` data class needs `kotlin-jpa`
 
-Embeddables also need a no-arg constructor and non-finality. `kotlin-jpa` configures both for `@Embeddable`:
+Embeddables need a no-arg constructor, which `kotlin-jpa` configures. Unlike entities, embeddables aren't proxied by Hibernate (they're loaded inline with the owning entity's row), so they don't need `kotlin-allopen`/non-finality:
 
 ```kotlin
 @Embeddable
@@ -187,7 +194,7 @@ To "update" an embedded value: replace the whole object on the parent. Same shap
 
 ## 12. Sealed classes for inheritance — apply `kotlin-allopen`
 
-Sealed hierarchies are popular for domain modeling. To map them as JPA inheritance (`SINGLE_TABLE` / `JOINED`), the sealed parent and its subtypes need `kotlin-allopen` (the `kotlin-jpa` plugin handles this when they're annotated `@Entity` / `@MappedSuperclass`).
+Sealed hierarchies are popular for domain modeling. To map them as JPA inheritance (`SINGLE_TABLE` / `JOINED`), the sealed parent and its subtypes need `kotlin-allopen` configured for `@Entity`/`@MappedSuperclass` — `kotlin-jpa` alone (no-arg only) does not open them; see §1.
 
 ```kotlin
 @Entity
@@ -208,8 +215,8 @@ Often it's cleaner to map the data layer with regular classes and convert to a s
 | Pattern | Verdict | Notes |
 |---|---|---|
 | `data class` as `@Entity` | ❌ Never | All-fields equals/hashCode/toString + `copy()` foot-guns |
-| Regular `class` as `@Entity` | ✅ With `kotlin-jpa` | Manual equals/hashCode with `Hibernate.getClass` |
-| `data class` as `@Embeddable` | ⚠️ OK | Needs `kotlin-jpa`; "update" by replacement |
+| Regular `class` as `@Entity` | ✅ With `kotlin-jpa` + `kotlin-allopen` | Manual equals/hashCode with `Hibernate.getClass` |
+| `data class` as `@Embeddable` | ⚠️ OK | Needs `kotlin-jpa` only (no proxying, so no `allopen`); "update" by replacement |
 | `data class` as DTO projection | ✅ Always | Canonical constructor used by Spring Data |
 | `val` on `@Id` | ✅ OK | Hibernate hydrates via reflection |
 | `val` on mutable column | ❌ Avoid | App code can't update; dirty checking unusable |
@@ -218,6 +225,7 @@ Often it's cleaner to map the data layer with regular classes and convert to a s
 | `lateinit var` on non-null field | ✅ OK | Better diagnostics than `""` placeholder |
 | `@JvmInline value class` field | ❌ Avoid | Erased at JVM level; needs converter, often breaks queries |
 | `by lazy` for collection field | ❌ Never | Not Hibernate lazy; never refreshes |
-| Sealed class hierarchy as JPA inheritance | ⚠️ OK | Needs `kotlin-allopen`; often better in domain layer |
+| Sealed class hierarchy as JPA inheritance | ⚠️ OK | Needs `kotlin-allopen` configured for `@Entity`; often better in domain layer |
 | `kotlin-noarg` plugin only | ❌ Incomplete | Fixes ctor but classes still final → no lazy proxies |
-| `kotlin-jpa` plugin | ✅ Required | The standard combo |
+| `kotlin-jpa` plugin only | ❌ Incomplete | No-arg only — does not open classes, same lazy-proxy problem as above |
+| `kotlin-jpa` + `kotlin-allopen` (configured for JPA annotations) | ✅ Required | The correct combo — no-arg ctor and non-final classes |

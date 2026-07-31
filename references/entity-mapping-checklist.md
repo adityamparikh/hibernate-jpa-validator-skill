@@ -290,17 +290,19 @@ Same problems as Lombok `@Data` (auto equals/hashCode/toString on all properties
 | Pattern | Verdict |
 |---|---|
 | `data class` as `@Entity` | ❌ Never — `copy()` creates accidental detached entities |
-| Regular `class` as `@Entity` with `kotlin-jpa` plugin | ✅ Required combination |
-| `kotlin-noarg` alone (no `kotlin-allopen`) | ❌ Class still final → LAZY proxies impossible |
+| Regular `class` as `@Entity` with `kotlin-jpa` **and** `kotlin-allopen` (configured for JPA annotations) | ✅ Required combination |
+| `kotlin-noarg` or `kotlin-jpa` alone (no `kotlin-allopen`) | ❌ Both are no-arg-only; class still final → LAZY proxies impossible |
 | `Long` (non-null) on `@Id` | ❌ Use `Long?` — `0L` breaks transient check |
 | Non-null Kotlin type, nullable DB column | ❌ Bypasses Kotlin's null check via reflection |
-| `data class` as `@Embeddable` (with `kotlin-jpa`) | ⚠️ OK — "update" by replacing the whole instance |
+| `data class` as `@Embeddable` (with `kotlin-jpa`) | ⚠️ OK — no `allopen` needed, embeddables aren't proxied; "update" by replacing the whole instance |
 | `data class` as DTO projection | ✅ Same as Java record |
 | `@JvmInline value class` field | ❌ Erased at JVM level — needs `AttributeConverter` |
 | `by lazy` for collection | ❌ Not Hibernate lazy — never reflects DB state |
 
 ```kotlin
 // ✅ Idiomatic Kotlin JPA entity
+// Requires kotlin-jpa (no-arg ctor) AND kotlin-allopen configured for
+// jakarta.persistence.Entity/@MappedSuperclass (non-final for LAZY proxies) — kotlin-jpa alone is not enough.
 @Entity
 class Post(
     var title: String,

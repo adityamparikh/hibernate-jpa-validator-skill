@@ -226,16 +226,16 @@ Records are `final`, have only `final` components, and have no synthesizable no-
 
 ### B11 — Kotlin Data Classes with JPA
 
-Same `@Data`-style problem (auto equals/hashCode/toString on all properties) **plus** records' problem (final by default, no no-arg constructor). The `kotlin-jpa` plugin papers over the JPA contract but doesn't fix the semantic foot-guns.
+Same `@Data`-style problem (auto equals/hashCode/toString on all properties) **plus** records' problem (final by default, no no-arg constructor). `kotlin-jpa` only fixes the constructor half of that — it wraps `kotlin-noarg`, not `kotlin-allopen` — so entities also need `kotlin-allopen` configured for `@Entity`/`@MappedSuperclass` to become non-final.
 
 | Pattern | Verdict |
 |---|---|
 | `data class` as `@Entity` | ❌ Auto equals/hashCode/toString on all fields + `copy()` makes accidental detached entities |
-| Regular `class` as `@Entity` with `kotlin-jpa` plugin | ✅ Required setup |
-| `kotlin-noarg` only (no `kotlin-allopen`) | ❌ Class still final → `LAZY` proxies impossible |
+| Regular `class` as `@Entity` with `kotlin-jpa` **and** `kotlin-allopen` (configured for JPA annotations) | ✅ Required setup |
+| `kotlin-jpa` alone (no `kotlin-allopen`) | ❌ No-arg only — class still final → `LAZY` proxies impossible |
 | `Long` (non-null) on `@Id` | ❌ Defaults to `0L`, breaks transient check — use `Long?` |
 | Non-null Kotlin type backing nullable column | ❌ NPE landmine — match nullability |
-| `data class` as `@Embeddable` (with `kotlin-jpa`) | ⚠️ OK — "update" by replacing the whole instance |
+| `data class` as `@Embeddable` (with `kotlin-jpa`) | ⚠️ OK — no `allopen` needed, embeddables aren't proxied; "update" by replacing the whole instance |
 | `data class` as DTO projection | ✅ Same as Java record |
 | `@JvmInline value class` field | ❌ Erased at JVM level — needs `AttributeConverter`, often breaks queries |
 
