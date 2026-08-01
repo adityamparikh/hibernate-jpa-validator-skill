@@ -292,12 +292,14 @@ Same problems as Lombok `@Data` (auto equals/hashCode/toString on all properties
 | `data class` as `@Entity` | ❌ Never — `copy()` creates accidental detached entities |
 | Regular `class` as `@Entity` with `kotlin-jpa` **and** `kotlin-allopen` (configured for JPA annotations) | ✅ Required combination |
 | `kotlin-noarg` or `kotlin-jpa` alone (no `kotlin-allopen`) | ❌ Both are no-arg-only; class still final → LAZY proxies impossible |
-| `Long` (non-null) on `@Id` | ❌ Use `Long?` — `0L` breaks transient check |
+| `Long` (non-null) on `@Id` | ❌ Use `Long?` — primitive `0` can't be told apart from a genuinely-persisted id-`0` row |
 | Non-null Kotlin type, nullable DB column | ❌ Bypasses Kotlin's null check via reflection |
 | `data class` as `@Embeddable` (with `kotlin-jpa`) | ⚠️ OK — no `allopen` needed, embeddables aren't proxied; "update" by replacing the whole instance |
 | `data class` as DTO projection | ✅ Same as Java record |
 | `@JvmInline value class` field | ❌ Erased at JVM level — needs `AttributeConverter` |
 | `by lazy` for collection | ❌ Not Hibernate lazy — never reflects DB state |
+| `@Access(AccessType.PROPERTY)` on a `val` property | ❌ Never — no generated setter, must be `var` |
+| Annotation on a property, default access | ✅ OK — field access is the default; getters/setters bypassed |
 
 ```kotlin
 // ✅ Idiomatic Kotlin JPA entity

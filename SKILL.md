@@ -233,11 +233,13 @@ Same `@Data`-style problem (auto equals/hashCode/toString on all properties) **p
 | `data class` as `@Entity` | ❌ Auto equals/hashCode/toString on all fields + `copy()` makes accidental detached entities |
 | Regular `class` as `@Entity` with `kotlin-jpa` **and** `kotlin-allopen` (configured for JPA annotations) | ✅ Required setup |
 | `kotlin-jpa` alone (no `kotlin-allopen`) | ❌ No-arg only — class still final → `LAZY` proxies impossible |
-| `Long` (non-null) on `@Id` | ❌ Defaults to `0L`, breaks transient check — use `Long?` |
+| `Long` (non-null) on `@Id` | ❌ Primitive `0` reads as "new" (correctly, for fresh entities) but can't distinguish a genuinely-persisted id-`0` row — use `Long?` |
 | Non-null Kotlin type backing nullable column | ❌ NPE landmine — match nullability |
 | `data class` as `@Embeddable` (with `kotlin-jpa`) | ⚠️ OK — no `allopen` needed, embeddables aren't proxied; "update" by replacing the whole instance |
 | `data class` as DTO projection | ✅ Same as Java record |
 | `@JvmInline value class` field | ❌ Erased at JVM level — needs `AttributeConverter`, often breaks queries |
+| `@Access(AccessType.PROPERTY)` on a `val` property | ❌ No generated setter — Hibernate can't write it; must be `var` |
+| Annotation on a property, no `@Access` override | ✅ Default field access — getters/setters bypassed, usually fine |
 
 → See `references/kotlin-data-classes-jpa.md` for full code examples.
 
