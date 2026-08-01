@@ -101,14 +101,16 @@ Use `ddl-auto=validate` (or migration-driven schema) to keep these in sync.
 
 ## 5. `Long?` for `@Id`, not `Long`
 
-A non-null `Long` defaults to `0L`, meaning a "new" entity has id `0L` instead of `null`. Hibernate's "is this transient?" check (`id == null`) misfires, leading to MERGE-instead-of-INSERT behavior on save. Always nullable:
+A non-null Kotlin `Long` `@Id` compiles to a primitive `long` field, which defaults to `0`, not `null`. Both Hibernate's own unsaved-value convention and Spring Data's `AbstractEntityInformation.isNew()` special-case primitive identifiers: a primitive `0` is treated as "new" the same way `null` is for a wrapper/nullable id. So for the ordinary case — a brand-new entity — a primitive `long` id of `0` still correctly routes through `persist()` and gets a real generated key. That's exactly why this mistake is easy to miss in normal use.
+
+The real failure mode is narrower: if a row that's genuinely persisted somehow has id `0` (a natural key, a sequence that starts at `0`, imported legacy data), `isNew()` still reports "new" — there's no way to distinguish "not yet persisted" from "persisted with id `0`" once the type can't represent `null`. Calling `save()` on that row calls `persist()`, and because the field is `@GeneratedValue`, Hibernate silently generates a *fresh* id and inserts a duplicate row instead of updating the original.
+
+`Long?` removes the ambiguity: a transient entity's id is unambiguously `null`, so `isNew()`'s reference-type branch (`id == null`) is exact, with no zero-value edge case to reason about.
 
 ```kotlin
 @Id @GeneratedValue
 var id: Long? = null
 ```
-
-Why it often "works" anyway, and why that's not a reason to keep it: Hibernate treats a primary-key value of `0` differently per method. `persist()` expects an unassigned id and throws if one looks already set; `merge()` treats `0` as "not yet assigned," generates a new key, and inserts a fresh row. Spring Data's `save()` picks `merge()` whenever it thinks the entity isn't new (its `isNew()` check is `id == null`), so a primitive `Long` id often still produces a correct insert — but at the cost of an extra `SELECT` per save (merge loads-then-merges), and it will silently *update* an existing row if one genuinely has id `0`. Prefer `Long?` and let `persist()` insert directly.
 
 ---
 
@@ -242,7 +244,7 @@ Often it's cleaner to map the data layer with regular classes and convert to a s
 | `val` on `@Id` | ✅ OK | Hibernate hydrates via reflection |
 | `val` on mutable column | ❌ Avoid | App code can't update; dirty checking unusable |
 | `var` on mutable column | ✅ Always | Standard |
-| `Long` (non-null) on `@Id` | ❌ Never | Use `Long?`; `merge()` papers over `0` with an extra SELECT, `persist()` throws |
+| `Long` (non-null) on `@Id` | ❌ Never | Primitive `0` reads as "new" to `isNew()`; a genuinely-persisted id-`0` row gets re-inserted as a duplicate on save — use `Long?` |
 | Property-annotated field, no `@Access` | ✅ Default | Field access — getters/setters bypassed, which is usually fine |
 | `@Access(AccessType.PROPERTY)` on a `val` | ❌ Never | No generated setter — Hibernate can't write the property |
 | `lateinit var` on non-null field | ✅ OK | Better diagnostics than `""` placeholder |
